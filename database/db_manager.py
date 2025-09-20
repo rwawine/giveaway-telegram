@@ -197,7 +197,7 @@ def get_db_connection():
     """Контекстный менеджер для работы с базой данных с оптимизацией для конкурентного доступа"""
     conn = None
     try:
-        conn = sqlite3.connect(DATABASE_PATH, timeout=30.0)  # Увеличиваем таймаут до 30 секунд
+        conn = sqlite3.connect(DATABASE_PATH, timeout=60.0)  # Увеличиваем таймаут до 60 секунд
         conn.row_factory = sqlite3.Row  # Для работы с результатами как со словарями
         
         # Настройки для высокой производительности и конкурентного доступа
@@ -206,7 +206,7 @@ def get_db_connection():
         conn.execute("PRAGMA cache_size=10000")  # Увеличиваем кэш до 10MB
         conn.execute("PRAGMA temp_store=MEMORY")  # Временные данные в памяти
         conn.execute("PRAGMA mmap_size=134217728")  # 128MB memory mapping
-        conn.execute("PRAGMA busy_timeout=30000")  # 30 секунд на попытки доступа
+        conn.execute("PRAGMA busy_timeout=60000")  # 60 секунд на попытки доступа
         
         yield conn
     except Exception as e:
@@ -450,12 +450,19 @@ def save_application(name: str, phone_number: str, telegram_username: str,
             ))
 
             app_id = cursor.lastrowid
-            # Если статус сразу approved — присвоим участнику номер, если ещё не задан
+            
+            # Если статус approved и номер не задан - присваиваем в той же транзакции
             if status == 'approved' and participant_number is None:
                 try:
-                    assign_next_participant_number(app_id)
-                except Exception:
-                    pass
+                    cursor.execute('SELECT MAX(participant_number) FROM applications')
+                    max_num = cursor.fetchone()[0]
+                    next_num = 1001 if not max_num else int(max_num) + 1
+                    cursor.execute(
+                        'UPDATE applications SET participant_number = ? WHERE id = ?',
+                        (next_num, app_id)
+                    )
+                except Exception as e:
+                    logger.warning(f"Не удалось присвоить номер участника: {e}")
 
             conn.commit()
             logger.info(f"Создана заявка для пользователя {name} (ID: {telegram_id}, app_id: {app_id})")

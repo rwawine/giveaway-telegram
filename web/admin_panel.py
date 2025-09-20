@@ -4,6 +4,7 @@
 
 import os
 import logging
+import time
 from functools import wraps
 from datetime import datetime
 
@@ -25,6 +26,57 @@ from utils.anti_fraud import AntiFraudSystem
 from utils.image_validation import analyze_leaflet
 
 logger = logging.getLogger(__name__)
+
+# Простой кэш для админки с TTL
+_cache = {}
+_cache_ttl = {}
+CACHE_DURATION = 5  # 5 секунд кэша для частых запросов
+
+def get_cached_or_fetch(key, fetch_func, ttl=CACHE_DURATION):
+    """Получает данные из кэша или выполняет функцию с retry-механизмом"""
+    current_time = time.time()
+    
+    # Проверяем кэш
+    if key in _cache and key in _cache_ttl:
+        if current_time - _cache_ttl[key] < ttl:
+            return _cache[key]
+    
+    # Выполняем функцию с retry при блокировках БД
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            result = fetch_func()
+            _cache[key] = result
+            _cache_ttl[key] = current_time
+            return result
+        except Exception as e:
+            if "database is locked" in str(e) and attempt < max_retries - 1:
+                wait_time = 0.1 * (2 ** attempt)  # Экспоненциальная задержка
+                logger.warning(f"WEB: БД заблокирована для {key}, попытка {attempt + 1}/{max_retries}, ждем {wait_time:.2f}s")
+                time.sleep(wait_time)
+                continue
+            else:
+                logger.error(f"Ошибка в кэшированной функции {key}: {e}")
+                # Возвращаем старые данные из кэша если есть
+                return _cache.get(key, None)
+    
+    return _cache.get(key, None)
+
+
+def clear_cache_key(key_pattern=None):
+    """Очищает кэш по ключу или паттерну"""
+    global _cache, _cache_ttl
+    
+    if key_pattern is None:
+        # Очищаем весь кэш
+        _cache.clear()
+        _cache_ttl.clear()
+    else:
+        # Очищаем ключи по паттерну
+        keys_to_remove = [k for k in _cache.keys() if key_pattern in k]
+        for key in keys_to_remove:
+            _cache.pop(key, None)
+            _cache_ttl.pop(key, None)
 
 
 def create_web_app() -> Flask:
@@ -86,7 +138,7 @@ def create_web_app() -> Flask:
     @app.route('/')
     @require_auth
     def admin_panel():
-        """Главная страница админки"""
+        """Главная страница админки (с кэшированием)"""
         try:
             # pagination + filters
             page = int(request.args.get('page', 1))
@@ -94,11 +146,18 @@ def create_web_app() -> Flask:
             risk = request.args.get('risk')  # low/medium/high/None
             status = request.args.get('status')  # approved/pending/blocked/None
             
-            total_count = get_applications_count()
+            # Кэшируем базовые данные
+            cache_key_count = "total_applications_count"
+            cache_key_winner = "current_winner"
+            
+            total_count = get_cached_or_fetch(cache_key_count, lambda: get_applications_count())
+            winner = get_cached_or_fetch(cache_key_winner, lambda: get_winner())
+            
+            # Данные страницы не кэшируем т.к. зависят от параметров
             applications = get_applications_page(page, per_page, risk=risk, status=status)
             list_total = get_filtered_applications_count(risk=risk, status=status) if (risk or status) else total_count
+            
             logger.info("WEB: открыта админ-панель")
-            winner = get_winner()
             # compute category stats
             stats = {
                 'total': total_count,
@@ -230,6 +289,10 @@ def create_web_app() -> Flask:
             # Создаем объявление
             seed = get_hash_seed()
             announcement = create_winner_announcement(winner, len(applications), seed)
+            
+            # Очищаем кэш после выбора победителя
+            clear_cache_key("current_winner")
+            clear_cache_key("total_applications_count")
             
             logger.info(f"Выбран победитель: {winner['name']} (ID: {winner['id']})")
             
@@ -419,16 +482,19 @@ def create_web_app() -> Flask:
             logger.error(f"Ошибка при получении пользователя: {e}")
             return jsonify({'success': False, 'error': str(e)})
 
-    # Поддержка: список тикетов
+    # Поддержка: список тикетов (с кэшированием)
     @app.route('/api/support/tickets', methods=['GET'])
     @require_auth
     def api_support_tickets():
         try:
-            logger.info("WEB: load support tickets")
             status = request.args.get('status', 'open')
-            tickets = get_open_support_tickets()
-            # TODO: добавить загрузку закрытых тикетов при необходимости
-            return jsonify({'success': True, 'tickets': tickets})
+            cache_key = f"support_tickets_{status}"
+            
+            tickets = get_cached_or_fetch(cache_key, lambda: get_open_support_tickets())
+            if tickets is not None:
+                return jsonify({'success': True, 'tickets': tickets})
+            else:
+                return jsonify({'success': False, 'error': 'Не удалось загрузить тикеты'})
         except Exception as e:
             logger.error(f"Ошибка в api_support_tickets: {e}")
             return jsonify({'success': False, 'error': str(e)})
@@ -463,6 +529,9 @@ def create_web_app() -> Flask:
             if not ok:
                 return jsonify({'success': False, 'error': 'Не удалось обновить тикет'})
 
+            # Очищаем кэш тикетов после изменений
+            clear_cache_key("support_tickets")
+            
             ticket = get_support_ticket(ticket_id)
             if ticket:
                 try:
@@ -492,6 +561,9 @@ def create_web_app() -> Flask:
             ok = reply_support_ticket(ticket_id, '')
             if not ok:
                 return jsonify({'success': False, 'error': 'Не удалось закрыть тикет'})
+
+            # Очищаем кэш тикетов после изменений
+            clear_cache_key("support_tickets")
 
             ticket = get_support_ticket(ticket_id)
             if ticket:
