@@ -1,0 +1,775 @@
+{% extends "base.html" %}
+
+{% block title %}Админ-панель - Управление заявками{% endblock %}
+
+{% block content %}
+<!-- Основной контейнер с отступами -->
+<div class="p-4 sm:p-6 lg:p-8 space-y-8">
+
+    <!-- Заголовок страницы -->
+    <header>
+        <h1 class="text-2xl font-bold text-slate-900 tracking-tight">Управление заявками</h1>
+        <p class="text-sm text-slate-500 mt-1">Обзор, управление и аналитика по заявкам участников.</p>
+    </header>
+
+    <!-- Секция: Дашборд -->
+    <section id="dashboard" class="space-y-6">
+        <!-- Статистика -->
+        <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
+            <!-- Карточка: Всего заявок -->
+            <div class="bg-white p-6 rounded-xl border border-slate-200 flex items-center justify-between">
+                <div>
+                    <div class="text-sm font-medium text-slate-500">Всего заявок</div>
+                    <div class="text-3xl font-bold text-slate-800 mt-1">{{ total_count }}</div>
+                </div>
+                <div class="bg-indigo-100 text-indigo-600 w-12 h-12 rounded-full flex items-center justify-center">
+                    <i class="fas fa-users text-xl"></i>
+                </div>
+            </div>
+            <!-- Карточка: Победитель -->
+            <div class="bg-white p-6 rounded-xl border border-slate-200 flex items-center justify-between">
+                <div>
+                    <div class="text-sm font-medium text-slate-500">Победитель</div>
+                    <div class="text-3xl font-bold {% if winner %}text-green-600{% else %}text-slate-800{% endif %} mt-1">{% if winner %}1{% else %}0{% endif %}</div>
+                </div>
+                <div class="{% if winner %}bg-green-100 text-green-600{% else %}bg-slate-100 text-slate-600{% endif %} w-12 h-12 rounded-full flex items-center justify-center">
+                    <i class="fas fa-crown text-xl"></i>
+                </div>
+            </div>
+            <!-- Карточка: Быстрые действия -->
+            <div class="bg-white p-6 rounded-xl border border-slate-200 col-span-1 md:col-span-2">
+                <h3 class="font-semibold text-slate-800 mb-4">Быстрые действия</h3>
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <button class="inline-flex items-center justify-center rounded-md bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 font-semibold transition-colors w-full" onclick="confirmSelectWinner()">
+                        <i class="fas fa-dice mr-2"></i>Выбрать победителя
+                    </button>
+                    <div class="grid grid-cols-2 gap-3">
+                        <button class="inline-flex items-center justify-center rounded-md border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 px-4 py-2 font-semibold transition-colors w-full" onclick="exportData('csv')">
+                            <i class="fas fa-file-csv mr-2"></i>CSV
+                        </button>
+                        <button class="inline-flex items-center justify-center rounded-md border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 px-4 py-2 font-semibold transition-colors w-full" onclick="exportData('excel')">
+                            <i class="fas fa-file-excel mr-2"></i>Excel
+                        </button>
+                    </div>
+                </div>
+                <div class="mt-4 pt-4 border-t border-slate-200">
+                    <button class="inline-flex items-center justify-center rounded-md bg-red-600 hover:bg-red-700 text-white px-4 py-2 font-semibold transition-colors w-full" onclick="confirmClearDatabase()">
+                        <i class="fas fa-trash-alt mr-2"></i>Очистить базу данных
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Информация о победителе -->
+        {% if winner %}
+        <div class="bg-white p-6 rounded-xl border-l-4 border-green-500 shadow-sm">
+            <h3 class="font-semibold text-slate-800 flex items-center mb-4"><i class="fas fa-crown text-green-500 mr-2"></i>Текущий победитель</h3>
+            <div class="flex items-center gap-4">
+                {% if winner.photo_path %}
+                <img src="/photo/{{ winner.photo_path | basename }}" class="w-16 h-16 rounded-full object-cover cursor-pointer" onclick="showPhotoModal('{{ winner.photo_path | basename }}', '{{ winner.name }}')">
+                {% else %}
+                <div class="w-16 h-16 rounded-full bg-slate-100 flex items-center justify-center"><i class="fas fa-user fa-2x text-slate-400"></i></div>
+                {% endif %}
+                <div class="flex-1">
+                    <h5 class="font-bold text-lg text-slate-800">{{ winner.name }}</h5>
+                    <div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-slate-500 mt-1">
+                        <span><i class="fas fa-at mr-1.5 w-4 text-center opacity-70"></i>{% if winner.telegram_username %}@{{ winner.telegram_username }}{% else %}Не указан{% endif %}</span>
+                        <span><i class="fas fa-phone mr-1.5 w-4 text-center opacity-70"></i>{{ winner.phone_number }}</span>
+                        <span><i class="fas fa-clock mr-1.5 w-4 text-center opacity-70"></i>{{ winner.timestamp | format_datetime }}</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+    </section>
+
+    <!-- Секция: Поддержка и Заявки (в 2 колонки) -->
+    <div class="grid grid-cols-1 xl:grid-cols-3 gap-8">
+        <!-- Колонка поддержки -->
+        <section id="support" class="xl:col-span-1 space-y-4">
+            <div class="bg-white rounded-xl border border-slate-200">
+                <div class="p-4 sm:p-5 border-b border-slate-200 flex items-center justify-between">
+                    <h3 class="font-semibold text-slate-800"><i class="fas fa-life-ring mr-2 text-indigo-500"></i>Открытые тикеты</h3>
+                    <button class="h-8 w-8 inline-flex items-center justify-center rounded-md border border-slate-300 bg-white hover:bg-slate-100 text-slate-500 transition-colors" onclick="loadTickets()" title="Обновить">
+                        <i class="fas fa-sync-alt"></i>
+                    </button>
+                </div>
+                <div id="ticketsContainer" class="divide-y divide-slate-200 max-h-[600px] overflow-y-auto">
+                    <div class="p-6 text-center text-slate-500">Загрузка...</div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Колонка с заявками -->
+        <section id="applications" class="xl:col-span-2 space-y-4">
+            <div class="bg-white rounded-xl border border-slate-200">
+                <!-- Заголовок и фильтры -->
+                <div class="p-4 sm:p-5 space-y-4 border-b border-slate-200">
+                    <div class="flex items-center justify-between">
+                        <h3 class="font-semibold text-slate-800"><i class="fas fa-list mr-2"></i>Список заявок ({{ total_count }})</h3>
+                        <button class="h-8 w-8 inline-flex items-center justify-center rounded-md border border-slate-300 bg-white hover:bg-slate-100 text-slate-500 transition-colors" onclick="refreshTable()" title="Обновить">
+                            <i class="fas fa-sync-alt"></i>
+                        </button>
+                    </div>
+                     <!-- Статистика -->
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-2 text-xs">
+                        <div class="flex flex-wrap gap-2 items-center">
+                            <span class="font-semibold text-slate-600">Статусы:</span>
+                            <span class="inline-flex items-center font-semibold px-2 py-1 text-xs rounded-md bg-green-100 text-green-800">Одобрены: {{ cat_stats.status.approved }}</span>
+                            <span class="inline-flex items-center font-semibold px-2 py-1 text-xs rounded-md bg-yellow-100 text-yellow-800">В ожидании: {{ cat_stats.status.pending }}</span>
+                            <span class="inline-flex items-center font-semibold px-2 py-1 text-xs rounded-md bg-red-100 text-red-800">Блок: {{ cat_stats.status.blocked }}</span>
+                        </div>
+                        <div class="flex flex-wrap gap-2 items-center">
+                            <span class="font-semibold text-slate-600">Риск:</span>
+                            <span class="inline-flex items-center font-semibold px-2 py-1 text-xs rounded-md bg-blue-100 text-blue-800">Низкий: {{ cat_stats.risk.low }}</span>
+                            <span class="inline-flex items-center font-semibold px-2 py-1 text-xs rounded-md bg-orange-100 text-orange-800">Средний: {{ cat_stats.risk.medium }}</span>
+                            <span class="inline-flex items-center font-semibold px-2 py-1 text-xs rounded-md bg-red-100 text-red-800">Высокий: {{ cat_stats.risk.high }}</span>
+                        </div>
+                    </div>
+                    <!-- Фильтры -->
+                    <form id="filtersForm" method="get" action="#applications" class="space-y-4">
+                         <input type="hidden" name="per_page" value="{{ per_page }}">
+                        <input id="statusInput" type="hidden" name="status" value="{{ filter_status }}">
+                        <input id="riskInput" type="hidden" name="risk" value="{{ filter_risk }}">
+                        <div class="flex items-center gap-2 flex-wrap">
+                            <label class="text-sm font-medium text-slate-600 mr-1">Фильтр:</label>
+                            <button type="button" class="px-3 py-1 text-sm rounded-full border cursor-pointer transition-colors bg-white border-slate-300 text-slate-600 hover:bg-slate-100" data-group="status" data-value="">Все</button>
+                            <button type="button" class="px-3 py-1 text-sm rounded-full border cursor-pointer transition-colors bg-white border-slate-300 text-slate-600 hover:bg-slate-100" data-group="status" data-value="approved">Одобрен</button>
+                            <button type="button" class="px-3 py-1 text-sm rounded-full border cursor-pointer transition-colors bg-white border-slate-300 text-slate-600 hover:bg-slate-100" data-group="status" data-value="pending">В ожидании</button>
+                            <button type="button" class="px-3 py-1 text-sm rounded-full border cursor-pointer transition-colors bg-white border-slate-300 text-slate-600 hover:bg-slate-100" data-group="status" data-value="blocked">Блокирован</button>
+                        </div>
+                        <div class="flex items-center gap-2 flex-wrap">
+                            <label class="text-sm font-medium text-slate-600 mr-1">Риск:</label>
+                            <button type="button" class="px-3 py-1 text-sm rounded-full border cursor-pointer transition-colors bg-white border-slate-300 text-slate-600 hover:bg-slate-100" data-group="risk" data-value="">Любой</button>
+                            <button type="button" class="px-3 py-1 text-sm rounded-full border cursor-pointer transition-colors bg-white border-slate-300 text-slate-600 hover:bg-slate-100" data-group="risk" data-value="low">Низкий</button>
+                            <button type="button" class="px-3 py-1 text-sm rounded-full border cursor-pointer transition-colors bg-white border-slate-300 text-slate-600 hover:bg-slate-100" data-group="risk" data-value="medium">Средний</button>
+                            <button type="button" class="px-3 py-1 text-sm rounded-full border cursor-pointer transition-colors bg-white border-slate-300 text-slate-600 hover:bg-slate-100" data-group="risk" data-value="high">Высокий</button>
+                        </div>
+                        <div class="flex items-center justify-between pt-2">
+                             <div class="text-sm text-slate-500">Найдено: {{ list_total }}</div>
+                             <div class="flex items-center gap-2">
+                                <a class="inline-flex items-center justify-center rounded-md border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 px-4 py-2 font-semibold transition-colors" href="/?per_page={{ per_page }}#applications">Сбросить</a>
+                                <button class="inline-flex items-center justify-center rounded-md bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 font-semibold transition-colors">Применить</button>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+                
+                <!-- Таблица заявок -->
+                <div class="overflow-x-auto">
+                    {% if applications %}
+                    <table class="min-w-full text-sm">
+                        <thead class="bg-slate-50 text-slate-500">
+                            <tr>
+                                <th class="text-left font-semibold p-4">Участник</th>
+                                <th class="text-left font-semibold p-4">Контакты</th>
+                                <th class="text-left font-semibold p-4">Дата</th>
+                                <th class="text-left font-semibold p-4">Статус</th>
+                                <th class="text-left font-semibold p-4">Риск</th>
+                                <th class="text-left font-semibold p-4">Действия</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-slate-200">
+                            {% for app in applications %}
+                            <tr id="application-{{ app.id }}" class="hover:bg-slate-50">
+                                <td class="p-4">
+                                    <div class="flex items-center gap-3">
+                                        {% if app.photo_path %}
+                                        <img class="h-10 w-10 rounded-full object-cover cursor-pointer" src="/photo/{{ app.photo_path | basename }}" onclick="showPhotoModal('{{ app.photo_path | basename }}', '{{ app.name }}')">
+                                        {% else %}
+                                        <div class="h-10 w-10 rounded-full bg-slate-100 flex items-center justify-center"><i class="fas fa-user text-slate-400"></i></div>
+                                        {% endif %}
+                                        <div>
+                                            <div class="font-semibold text-slate-800">{{ app.name }}</div>
+                                            <div class="text-xs text-slate-500">ID: {{ app.id }} {% if app.is_winner %}👑{% endif %}{% if app.participant_number %}| №{{ app.participant_number }}{% endif %}</div>
+                                        </div>
+                                    </div>
+                                </td>
+                                <td class="p-4 text-slate-600">
+                                    <div>{{ app.phone_number }}</div>
+                                    <div class="text-xs">{% if app.telegram_username %}@{{ app.telegram_username }}{% else %}Нет Telegram{% endif %}</div>
+                                </td>
+                                <td class="p-4 text-slate-600">{{ app.timestamp | format_datetime }}</td>
+                                <td class="p-4">
+                                    {% if app.status == 'approved' %}<span class="inline-flex items-center font-semibold px-2 py-1 text-xs rounded-md bg-green-100 text-green-800">Одобрен</span>
+                                    {% elif app.status == 'blocked' %}<span class="inline-flex items-center font-semibold px-2 py-1 text-xs rounded-md bg-red-100 text-red-800">Блокирован</span>
+                                    {% else %}<span class="inline-flex items-center font-semibold px-2 py-1 text-xs rounded-md bg-yellow-100 text-yellow-800">В ожидании</span>{% endif %}
+                                </td>
+                                <td class="p-4">
+                                    {% set risk = app.risk_score or 0 %}
+                                    {% if risk <= 30 %}<span class="inline-flex items-center font-semibold px-2 py-1 text-xs rounded-md bg-blue-100 text-blue-800">{{ risk }}/100</span>
+                                    {% elif risk <= 70 %}<span class="inline-flex items-center font-semibold px-2 py-1 text-xs rounded-md bg-orange-100 text-orange-800">{{ risk }}/100</span>
+                                    {% else %}<span class="inline-flex items-center font-semibold px-2 py-1 text-xs rounded-md bg-red-100 text-red-800">{{ risk }}/100</span>{% endif %}
+                                </td>
+                                <td class="p-4">
+                                    <div class="flex items-center gap-2">
+                                        <button class="h-8 w-8 inline-flex items-center justify-center rounded-md border border-slate-300 bg-white hover:bg-slate-100 text-slate-500 transition-colors" data-user-id="{{ app.id }}" onclick="openRiskModal(this.dataset.userId)" title="Анализ рисков"><i class="fas fa-shield-alt"></i></button>
+                                        <button class="h-8 w-8 inline-flex items-center justify-center rounded-md border border-slate-300 bg-white hover:bg-red-50 text-red-500 transition-colors" data-app-id="{{ app.id }}" data-app-name="{{ app.name }}" onclick="deleteApplication(this.dataset.appId, this.dataset.appName)" title="Удалить"><i class="fas fa-trash"></i></button>
+                                    </div>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                    {% else %}
+                    <div class="text-center py-16">
+                        <i class="fas fa-inbox fa-3x text-slate-300 mb-3"></i>
+                        <h5 class="text-slate-600 font-semibold">Заявок пока нет</h5>
+                        <p class="text-slate-400 text-sm mt-1">Здесь появятся заявки от пользователей.</p>
+                    </div>
+                    {% endif %}
+                </div>
+                 <!-- Пагинация -->
+                {% if applications %}
+                <div class="px-5 py-4 border-t border-slate-200 flex items-center justify-between text-sm">
+                    <div>Страница <span class="font-semibold">{{ page }}</span> из <span class="font-semibold">{{ total_pages }}</span></div>
+                    <div class="flex items-center gap-2">
+                        {% set prev_page = page - 1 %}{% set next_page = page + 1 %}
+                        <a class="inline-flex items-center justify-center rounded-md border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 px-4 py-2 font-semibold transition-colors {% if page <= 1 %}opacity-50 pointer-events-none{% endif %}" href="/?page={{ prev_page }}&per_page={{ per_page }}&status={{ filter_status }}&risk={{ filter_risk }}#applications">Назад</a>
+                        <a class="inline-flex items-center justify-center rounded-md border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 px-4 py-2 font-semibold transition-colors {% if page >= total_pages %}opacity-50 pointer-events-none{% endif %}" href="/?page={{ next_page }}&per_page={{ per_page }}&status={{ filter_status }}&risk={{ filter_risk }}#applications">Далее</a>
+                    </div>
+                </div>
+                {% endif %}
+            </div>
+        </section>
+    </div>
+</div>
+
+<!-- Модальные окна -->
+<div id="modal-overlay" class="fixed inset-0 bg-black/50 z-40 hidden backdrop-blur-sm"></div>
+
+<!-- Модальное окно риска -->
+<div id="riskModal" class="fixed inset-0 z-50 flex items-center justify-center p-4 hidden">
+    <div class="relative bg-white rounded-xl shadow-xl w-full max-w-2xl">
+        <div class="flex items-center justify-between p-4 border-b border-slate-200 text-slate-800">
+            <h5 class="font-semibold"><i class="fas fa-shield-alt mr-2"></i>Анализ рисков участника #<span id="riskUserId"></span></h5>
+            <button class="text-2xl font-light text-slate-400 hover:text-slate-600 leading-none" onclick="closeModal('riskModal')">&times;</button>
+        </div>
+        <div class="p-6">
+            <div class="flex items-center mb-4">
+                <div id="riskScoreBadge" class="px-3 py-1 text-sm font-semibold rounded-full">0/100</div>
+                <div id="riskStatusText" class="ml-3 text-slate-600">...</div>
+            </div>
+            <div id="riskDetails" class="text-sm space-y-2 max-h-60 overflow-y-auto pr-2"></div>
+        </div>
+        <div class="flex items-center justify-end p-4 bg-slate-50 border-t rounded-b-xl gap-3">
+            <button class="inline-flex items-center justify-center rounded-md border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 px-4 py-2 font-semibold transition-colors" onclick="recomputeRisk()"><i class="fas fa-sync-alt mr-1"></i>Пересчитать</button>
+            <button class="inline-flex items-center justify-center rounded-md bg-green-600 hover:bg-green-700 text-white px-4 py-2 font-semibold transition-colors" onclick="setUserStatus('approved')"><i class="fas fa-check mr-1"></i>Одобрить</button>
+            <button class="inline-flex items-center justify-center rounded-md bg-red-600 hover:bg-red-700 text-white px-4 py-2 font-semibold transition-colors" onclick="setUserStatus('blocked')"><i class="fas fa-ban mr-1"></i>Блокировать</button>
+        </div>
+    </div>
+    <input type="hidden" id="riskModalUserId" value="">
+</div>
+
+<!-- Модальное окно для фото -->
+<div id="photoModal" class="fixed inset-0 z-50 flex items-center justify-center p-4 hidden">
+    <div class="relative bg-white rounded-xl shadow-xl w-full max-w-2xl">
+        <div class="flex items-center justify-between p-4 border-b border-slate-200 text-slate-800">
+            <h5 class="font-semibold"><i class="fas fa-image mr-2"></i>Фото участника: <span id="photoModalName"></span></h5>
+            <button class="text-2xl font-light text-slate-400 hover:text-slate-600 leading-none" onclick="closeModal('photoModal')">&times;</button>
+        </div>
+        <div class="p-6 text-center">
+            <img id="photoModalImage" src="" class="max-w-full h-auto rounded-lg" alt="Фото">
+        </div>
+    </div>
+</div>
+
+<!-- Модальное окно подтверждения удаления -->
+<div id="deleteModal" class="fixed inset-0 z-50 flex items-center justify-center p-4 hidden">
+    <div class="relative bg-white rounded-xl shadow-xl w-full max-w-md">
+        <div class="p-6 text-center">
+            <div class="w-12 h-12 rounded-full bg-red-100 flex items-center justify-center mx-auto"><i class="fas fa-exclamation-triangle text-red-600 text-xl"></i></div>
+            <h3 class="text-lg font-medium text-slate-900 mt-4">Подтверждение удаления</h3>
+            <p class="mt-2 text-sm text-slate-500">Вы уверены, что хотите удалить заявку <strong id="deleteModalName"></strong>? Это действие нельзя отменить.</p>
+        </div>
+        <div class="flex items-center justify-center p-4 bg-slate-50 border-t rounded-b-xl gap-3">
+            <button class="inline-flex items-center justify-center rounded-md border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 px-4 py-2 font-semibold transition-colors" onclick="closeModal('deleteModal')">Отмена</button>
+            <button id="confirmDeleteBtn" class="inline-flex items-center justify-center rounded-md bg-red-600 hover:bg-red-700 text-white px-4 py-2 font-semibold transition-colors"><i class="fas fa-trash mr-2"></i>Удалить</button>
+        </div>
+    </div>
+</div>
+
+<!-- Модальное окно выбора победителя -->
+<div id="winnerModal" class="fixed inset-0 z-50 flex items-center justify-center p-4 hidden">
+    <div class="relative bg-white rounded-xl shadow-xl w-full max-w-lg">
+        <div class="flex items-center justify-between p-4 border-b border-slate-200 text-slate-800">
+            <h5 class="font-semibold"><i class="fas fa-crown text-amber-500 mr-2"></i>Результат розыгрыша</h5>
+            <button class="text-2xl font-light text-slate-400 hover:text-slate-600 leading-none" onclick="closeModal('winnerModal')">&times;</button>
+        </div>
+        <div id="winnerModalBody" class="p-6"></div>
+        <div class="flex items-center justify-end p-4 bg-slate-50 border-t rounded-b-xl gap-3">
+            <button class="inline-flex items-center justify-center rounded-md border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 px-4 py-2 font-semibold transition-colors" onclick="closeModal('winnerModal')">Закрыть</button>
+            <button class="inline-flex items-center justify-center rounded-md bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 font-semibold transition-colors" onclick="selectWinnerAndClose()"><i class="fas fa-dice mr-2"></i>Выбрать заново</button>
+        </div>
+    </div>
+</div>
+
+<!-- Модальное окно подтверждения выбора победителя -->
+<div id="confirmWinnerModal" class="fixed inset-0 z-50 flex items-center justify-center p-4 hidden">
+    <div class="relative bg-white rounded-xl shadow-xl w-full max-w-md">
+        <div class="p-6 text-center">
+            <div class="w-12 h-12 rounded-full bg-indigo-100 flex items-center justify-center mx-auto"><i class="fas fa-question-circle text-indigo-600 text-xl"></i></div>
+            <h3 class="text-lg font-medium text-slate-900 mt-4">Подтвердите действие</h3>
+            <p class="mt-2 text-sm text-slate-500">Вы уверены, что хотите выбрать победителя сейчас?</p>
+        </div>
+        <div class="flex items-center justify-center p-4 bg-slate-50 border-t rounded-b-xl gap-3">
+            <button class="inline-flex items-center justify-center rounded-md border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 px-4 py-2 font-semibold transition-colors" onclick="closeModal('confirmWinnerModal')">Отмена</button>
+            <button id="confirmWinnerBtn" class="inline-flex items-center justify-center rounded-md bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 font-semibold transition-colors"><i class="fas fa-dice mr-2"></i>Выбрать</button>
+        </div>
+    </div>
+</div>
+
+<!-- Модальное окно очистки БД -->
+<div id="clearDbModal" class="fixed inset-0 z-50 flex items-center justify-center p-4 hidden">
+    <div class="relative bg-white rounded-xl shadow-xl w-full max-w-md">
+        <div class="p-6 text-center">
+            <div class="w-12 h-12 rounded-full bg-red-100 flex items-center justify-center mx-auto"><i class="fas fa-exclamation-triangle text-red-600 text-xl"></i></div>
+            <h3 class="text-lg font-medium text-slate-900 mt-4">Очистка базы данных</h3>
+            <p class="mt-2 text-sm text-slate-500">Введите <strong>ОЧИСТИТЬ</strong> для подтверждения удаления всех данных:</p>
+            <input type="text" id="clearDbConfirmText" class="mt-4 w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-red-500" placeholder="Введите ОЧИСТИТЬ">
+        </div>
+        <div class="flex items-center justify-center p-4 bg-slate-50 border-t rounded-b-xl gap-2">
+            <button class="inline-flex items-center justify-center rounded-md border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 px-4 py-2 font-semibold transition-colors" onclick="closeModal('clearDbModal')">Отмена</button>
+            <button id="confirmClearDbBtn" class="inline-flex items-center justify-center rounded-md bg-red-600 hover:bg-red-700 text-white px-3 py-2 font-semibold transition-colors"><i class="fas fa-trash-alt mr-1"></i>Обычная</button>
+            <button id="confirmForceClearDbBtn" class="inline-flex items-center justify-center rounded-md bg-red-800 hover:bg-red-900 text-white px-3 py-2 font-semibold transition-colors"><i class="fas fa-exclamation-triangle mr-1"></i>Принудительная</button>
+        </div>
+    </div>
+</div>
+
+<!-- Контейнер для уведомлений (toast) -->
+<div id="toastContainer" class="fixed top-4 right-4 z-[100] space-y-2"></div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// --- Admin Panel JavaScript ---
+let deleteApplicationId = null;
+
+// --- Modal Management ---
+const modalOverlay = document.getElementById('modal-overlay');
+
+function openModal(modalId) {
+    const modal = document.getElementById(modalId);
+    if (modal && modalOverlay) {
+        modal.classList.remove('hidden');
+        modalOverlay.classList.remove('hidden');
+    }
+}
+
+function closeModal(modalId) {
+    const modal = document.getElementById(modalId);
+    if (modal && modalOverlay) {
+        modal.classList.add('hidden');
+        modalOverlay.classList.add('hidden');
+    }
+}
+
+if (modalOverlay) {
+    modalOverlay.addEventListener('click', () => {
+        document.querySelectorAll('.modal').forEach(m => {
+            if (!m.classList.contains('hidden')) {
+                closeModal(m.id);
+            }
+        });
+    });
+}
+
+// --- UI Actions ---
+function showPhotoModal(filename, name) {
+    document.getElementById('photoModalName').textContent = name;
+    document.getElementById('photoModalImage').src = '/photo/' + filename;
+    openModal('photoModal');
+}
+
+function deleteApplication(id, name) {
+    deleteApplicationId = id;
+    document.getElementById('deleteModalName').textContent = name;
+    openModal('deleteModal');
+}
+
+document.getElementById('confirmDeleteBtn').addEventListener('click', function () {
+    if (deleteApplicationId) {
+        fetch(`/api/delete_application/${deleteApplicationId}`, { method: 'DELETE' })
+            .then(res => res.json())
+            .then(data => {
+                showAlert(data.success ? 'Заявка успешно удалена' : `Ошибка: ${data.error}`, data.success ? 'success' : 'danger');
+                if (data.success) setTimeout(() => location.reload(), 1000);
+            })
+            .catch(() => showAlert('Сетевая ошибка при удалении', 'danger'))
+            .finally(() => closeModal('deleteModal'));
+    }
+});
+
+function confirmSelectWinner() {
+    const btn = document.getElementById('confirmWinnerBtn');
+    const handler = () => {
+        btn.removeEventListener('click', handler);
+        closeModal('confirmWinnerModal');
+        selectWinner();
+    };
+    btn.addEventListener('click', handler);
+    openModal('confirmWinnerModal');
+}
+
+function selectWinnerAndClose() {
+    closeModal('winnerModal');
+    confirmSelectWinner(); // Re-confirm for another selection
+}
+
+function selectWinner() {
+    fetch('/api/select_winner', { method: 'POST' })
+        .then(res => res.json())
+        .then(data => {
+            if (data.success) {
+                const winner = data.winner;
+                document.getElementById('winnerModalBody').innerHTML = `
+                    <div class="text-center p-4">
+                        <i class="fas fa-crown fa-4x text-amber-400 mb-4"></i>
+                        <h3 class="text-xl font-bold text-slate-800 mb-2">🎊 Поздравляем победителя! 🎊</h3>
+                        <div class="bg-slate-50 border rounded-lg p-4 my-4 text-left">
+                            <h5 class="font-bold text-lg text-slate-900">${winner.name}</h5>
+                            <p class="text-slate-600 mt-1">${winner.telegram_username ? '@' + winner.telegram_username : 'Нет Telegram'}</p>
+                            <p class="text-slate-600">${winner.phone_number}</p>
+                        </div>
+                        <div class="text-xs text-slate-400 mt-4 font-mono">
+                            <p>Hash-seed: ${data.seed}</p>
+                            <p>Участников: ${data.total_participants}</p>
+                        </div>
+                    </div>`;
+                openModal('winnerModal');
+                // Обновляем страницу через 3 секунды для показа нового победителя
+                setTimeout(() => location.reload(), 3000);
+            } else {
+                showAlert(`Ошибка: ${data.error}`, 'danger');
+            }
+        })
+        .catch(() => showAlert('Сетевая ошибка при выборе победителя', 'danger'));
+}
+
+function exportData(format) {
+    window.location.href = `/api/export/${format}`;
+    showAlert(`Экспорт в ${format.toUpperCase()} начат`, 'info');
+}
+
+function revalidateLeaflet(userId) {
+    fetch(`/api/validate/${userId}`, { method: 'POST' })
+        .then(r => r.json())
+        .then(d => {
+            showAlert(d.success ? 'Лифлет перепроверен' : `Ошибка: ${d.error || 'неизвестно'}`, d.success ? 'success' : 'danger');
+            if (d.success) setTimeout(() => location.reload(), 800);
+        })
+        .catch(() => showAlert('Сетевая ошибка при перепроверке', 'danger'));
+}
+
+function refreshTable() {
+    window.location.reload();
+}
+
+// --- Database Clear Functions ---
+function confirmClearDatabase() {
+    document.getElementById('clearDbConfirmText').value = '';
+    openModal('clearDbModal');
+}
+
+// Обычная очистка БД
+document.getElementById('confirmClearDbBtn').addEventListener('click', function () {
+    const confirmText = document.getElementById('clearDbConfirmText').value.trim();
+    if (confirmText !== 'ОЧИСТИТЬ') {
+        showAlert('Введите точно "ОЧИСТИТЬ" для подтверждения', 'danger');
+        return;
+    }
+    
+    const btn = this;
+    const originalText = btn.innerHTML;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i>Очищаем...';
+    btn.disabled = true;
+    
+    fetch('/api/clear_database', { method: 'POST' })
+        .then(res => res.json())
+        .then(data => {
+            showAlert(data.success ? data.message : `Ошибка: ${data.error}`, data.success ? 'success' : 'warning');
+            if (data.success) {
+                closeModal('clearDbModal');
+                setTimeout(() => location.reload(), 1500);
+            } else {
+                btn.innerHTML = originalText;
+                btn.disabled = false;
+            }
+        })
+        .catch(() => {
+            showAlert('Сетевая ошибка при очистке БД', 'danger');
+            btn.innerHTML = originalText;
+            btn.disabled = false;
+        });
+});
+
+// Принудительная очистка БД
+document.getElementById('confirmForceClearDbBtn').addEventListener('click', function () {
+    const confirmText = document.getElementById('clearDbConfirmText').value.trim();
+    if (confirmText !== 'ОЧИСТИТЬ') {
+        showAlert('Введите точно "ОЧИСТИТЬ" для подтверждения', 'danger');
+        return;
+    }
+    
+    const btn = this;
+    const originalText = btn.innerHTML;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i>Принудительно...';
+    btn.disabled = true;
+    
+    fetch('/api/force_clear_database', { method: 'POST' })
+        .then(res => res.json())
+        .then(data => {
+            showAlert(data.success ? data.message : `Ошибка: ${data.error}`, data.success ? 'success' : 'danger');
+            if (data.success) {
+                closeModal('clearDbModal');
+                setTimeout(() => location.reload(), 1500);
+            } else {
+                btn.innerHTML = originalText;
+                btn.disabled = false;
+            }
+        })
+        .catch(() => {
+            showAlert('Сетевая ошибка при принудительной очистке БД', 'danger');
+            btn.innerHTML = originalText;
+            btn.disabled = false;
+        });
+});
+
+// --- Notifications ---
+function showAlert(message, type = 'info') {
+    const container = document.getElementById('toastContainer');
+    const colors = { success: 'bg-green-600', danger: 'bg-red-600', info: 'bg-indigo-600', warning: 'bg-yellow-500' };
+    const toast = document.createElement('div');
+    toast.className = `w-full max-w-xs p-3 rounded-lg shadow-2xl text-white text-sm font-semibold ${colors[type] || 'bg-slate-700'}`;
+    toast.textContent = message;
+    container.appendChild(toast);
+    setTimeout(() => {
+        toast.style.transition = 'opacity 0.5s ease';
+        toast.style.opacity = '0';
+        setTimeout(() => toast.remove(), 500);
+    }, 4000);
+}
+
+// --- Risk Analysis ---
+function openRiskModal(userId) {
+    document.getElementById('riskModalUserId').value = userId;
+    document.getElementById('riskUserId').textContent = userId;
+    loadRiskData(); // Загружаем данные из БД
+    openModal('riskModal');
+}
+
+function loadRiskData() {
+    const userId = document.getElementById('riskModalUserId').value;
+    if (!userId) return;
+    fetch(`/api/risk/get/${userId}`)
+        .then(r => r.json())
+        .then(d => d.success ? updateRiskUI(d.risk_score, d.risk_level, d.details) : showAlert(`Ошибка: ${d.error || 'неизвестно'}`, 'danger'));
+}
+
+function recomputeRisk() {
+    const userId = document.getElementById('riskModalUserId').value;
+    if (!userId) return;
+    
+    // Показываем индикатор загрузки
+    const btn = event.target;
+    const originalText = btn.innerHTML;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i>Пересчитываем...';
+    btn.disabled = true;
+    
+    fetch(`/api/risk/recompute/${userId}`, { method: 'POST' })
+        .then(r => r.json())
+        .then(d => {
+            if (d.success) {
+                updateRiskUI(d.risk_score, d.risk_level, d.details);
+                showAlert('Риск пересчитан и обновлен в БД', 'success');
+                // НЕ обновляем страницу - пользователь может продолжить работу с модальным окном
+            } else {
+                showAlert(`Ошибка: ${d.error || 'неизвестно'}`, 'danger');
+            }
+        })
+        .catch(err => {
+            showAlert('Сетевая ошибка при пересчете', 'danger');
+        })
+        .finally(() => {
+            // Восстанавливаем кнопку
+            btn.innerHTML = originalText;
+            btn.disabled = false;
+        });
+}
+
+function updateRiskUI(score, level, details) {
+    const badge = document.getElementById('riskScoreBadge');
+    const txt = document.getElementById('riskStatusText');
+    const det = document.getElementById('riskDetails');
+    const colors = { low: 'bg-blue-100 text-blue-800', medium: 'bg-orange-100 text-orange-800', high: 'bg-red-100 text-red-800' };
+    const levels = { low: 'Низкий риск', medium: 'Средний риск', high: 'Высокий риск' };
+
+    badge.className = `px-3 py-1 text-sm font-semibold rounded-full ${colors[level] || 'bg-slate-100 text-slate-800'}`;
+    badge.textContent = `${score}/100`;
+    txt.textContent = levels[level] || 'Неизвестно';
+    
+    // Показываем детали анализа
+    if (Array.isArray(details) && details.length > 0) {
+        const detailsHtml = details.map(x => {
+            const impact = x.impact ? ` (+${x.impact})` : '';
+            return `<div class="flex items-start"><span class="mr-2 pt-0.5">${x.passed ? '✅' : '⚠️'}</span><span><strong>${escapeHtml(x.name)}</strong>: ${escapeHtml(x.message || '')}${impact}</span></div>`;
+        }).join('');
+        det.innerHTML = detailsHtml;
+    } else {
+        det.innerHTML = '<div class="text-slate-400">Нет деталей для анализа.</div>';
+    }
+}
+
+function setUserStatus(status) {
+    const userId = document.getElementById('riskModalUserId').value;
+    if (!userId) return;
+    
+    // Показываем индикатор загрузки на кнопке
+    const btn = event.target;
+    const originalText = btn.innerHTML;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i>Обновляем...';
+    btn.disabled = true;
+    
+    fetch(`/api/risk/status/${userId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status })
+    }).then(r => r.json()).then(d => {
+        if (d.success) {
+            const statusText = status === 'approved' ? 'одобрен' : (status === 'blocked' ? 'заблокирован' : 'изменен');
+            showAlert(`Статус пользователя ${statusText}`, 'success');
+            
+            // Закрываем модальное окно и обновляем страницу
+            setTimeout(() => {
+                closeModal('riskModal');
+                location.reload();
+            }, 1000);
+        } else {
+            showAlert(`Ошибка: ${d.error || 'неизвестно'}`, 'danger');
+            // Восстанавливаем кнопку при ошибке
+            btn.innerHTML = originalText;
+            btn.disabled = false;
+        }
+    }).catch(err => {
+        showAlert('Сетевая ошибка', 'danger');
+        // Восстанавливаем кнопку при ошибке
+        btn.innerHTML = originalText;
+        btn.disabled = false;
+    });
+}
+
+// --- Support Tickets ---
+function loadTickets() {
+    const container = document.getElementById('ticketsContainer');
+    if (!container) return;
+    fetch('/api/support/tickets').then(r => r.json()).then(d => {
+        container.innerHTML = '';
+        if (!d.success) {
+            container.innerHTML = `<div class="p-5 text-red-500">${d.error || 'Ошибка загрузки'}</div>`;
+            return;
+        }
+        if (d.tickets.length === 0) {
+            container.innerHTML = '<div class="p-5 text-slate-500 text-center">Открытых тикетов нет</div>';
+            return;
+        }
+        d.tickets.forEach(t => {
+            const item = document.createElement('div');
+            item.className = 'p-5';
+            item.innerHTML = `
+                <div class="flex items-start justify-between">
+                    <h6 class="font-semibold text-slate-800">#${t.id} &bull; ${escapeHtml(t.user_name || 'Аноним')}</h6>
+                    <small class="text-slate-400 ml-4 whitespace-nowrap text-xs">${formatDateTime(t.created_at)}</small>
+                </div>
+                <p class="mt-1 text-slate-600 text-sm">${escapeHtml(t.message)}</p>
+                <div class="mt-4 flex items-center gap-2">
+                    <button class="inline-flex items-center justify-center rounded-md bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 text-sm font-semibold transition-colors" onclick="replyTicket(${t.id})"><i class="fas fa-reply mr-1"></i>Ответить</button>
+                    <button class="inline-flex items-center justify-center rounded-md border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 px-3 py-1.5 text-sm font-semibold transition-colors" onclick="closeTicket(${t.id})"><i class="fas fa-check mr-1"></i>Закрыть</button>
+                </div>`;
+            container.appendChild(item);
+        });
+    });
+}
+
+function replyTicket(id) {
+    const text = prompt('Введите ответ пользователю:');
+    if (!text) return;
+    fetch('/api/support/reply', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ticket_id: id, reply_text: text })
+    }).then(r => r.json()).then(d => {
+        showAlert(d.success ? 'Ответ отправлен' : `Ошибка: ${d.error || ''}`, d.success ? 'success' : 'danger');
+        if (d.success) loadTickets();
+    });
+}
+
+function closeTicket(id) {
+    if (!confirm('Вы уверены, что хотите закрыть тикет #' + id + '?')) return;
+    fetch('/api/support/close', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ticket_id: id })
+    }).then(r => r.json()).then(d => {
+        showAlert(d.success ? 'Тикет закрыт' : `Ошибка: ${d.error || ''}`, d.success ? 'success' : 'danger');
+        if (d.success) loadTickets();
+    });
+}
+
+// --- Utils ---
+function escapeHtml(s) {
+    return (s || '').replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#x27;' })[m]);
+}
+
+function formatDateTime(datetimeStr) {
+    if (!datetimeStr) return '';
+    try {
+        const dt = new Date(datetimeStr);
+        const day = String(dt.getDate()).padStart(2, '0');
+        const month = String(dt.getMonth() + 1).padStart(2, '0');
+        const year = dt.getFullYear();
+        const hours = String(dt.getHours()).padStart(2, '0');
+        const minutes = String(dt.getMinutes()).padStart(2, '0');
+        return `${day}.${month}.${year} ${hours}:${minutes}`;
+    } catch (e) {
+        return datetimeStr;
+    }
+}
+
+// --- Initialization ---
+document.addEventListener('DOMContentLoaded', () => {
+    loadTickets();
+    
+    const form = document.getElementById('filtersForm');
+    if (!form) return;
+    
+    const statusInput = document.getElementById('statusInput');
+    const riskInput = document.getElementById('riskInput');
+    const chips = form.querySelectorAll('button[data-group]');
+
+    function syncChips() {
+        chips.forEach(chip => {
+            const isActive = (chip.dataset.group === 'status' && statusInput.value === chip.dataset.value) ||
+                             (chip.dataset.group === 'risk' && riskInput.value === chip.dataset.value);
+            
+            if (isActive) {
+                chip.className = 'px-3 py-1 text-sm rounded-full border cursor-pointer transition-colors bg-indigo-600 border-indigo-600 text-white hover:bg-indigo-700';
+            } else {
+                chip.className = 'px-3 py-1 text-sm rounded-full border cursor-pointer transition-colors bg-white border-slate-300 text-slate-600 hover:bg-slate-100';
+            }
+        });
+    }
+
+    chips.forEach(chip => {
+        chip.addEventListener('click', () => {
+            const group = chip.dataset.group;
+            const val = chip.dataset.value || '';
+            if (group === 'status') statusInput.value = val;
+            if (group === 'risk') riskInput.value = val;
+            syncChips();
+        });
+    });
+
+    syncChips();
+});
+</script>
+{% endblock %}

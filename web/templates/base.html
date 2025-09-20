@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="ru" class="h-full bg-slate-100">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Корпоративная консоль{% endblock %}</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Font Awesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <style>
+        /* Добавляем плавности для transition и кастомный скроллбар для Webkit */
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; }
+        ::selection { background-color: #4f46e5; color: white; }
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: #f1f5f9; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+    </style>
+    {% block extra_css %}{% endblock %}
+</head>
+<body class="h-full">
+    <div class="flex min-h-full">
+        <!-- Sidebar -->
+        <aside id="sidebar" class="w-64 flex flex-col bg-white border-r border-slate-200 hidden lg:flex relative h-full z-40">
+            <div class="h-16 flex items-center px-6 shrink-0 border-b border-slate-200">
+                <h1 class="text-lg font-bold text-slate-800 flex items-center gap-2">
+                    <i class="fas fa-shield-alt text-indigo-600"></i>
+                    <span>Admin Console</span>
+                </h1>
+            </div>
+            <nav class="flex-1 p-4 space-y-1">
+                <a data-target="dashboard" href="#dashboard" class="side-link flex items-center gap-3 px-3 py-2 rounded-md text-slate-600 hover:bg-slate-100 hover:text-slate-900 transition font-medium">
+                    <i class="fas fa-gauge-high w-5 text-center"></i>
+                    <span>Дашборд</span>
+                </a>
+                <a data-target="applications" href="#applications" class="side-link flex items-center gap-3 px-3 py-2 rounded-md text-slate-600 hover:bg-slate-100 hover:text-slate-900 transition font-medium">
+                    <i class="fas fa-users w-5 text-center"></i>
+                    <span>Заявки</span>
+                </a>
+                <a data-target="support" href="#support" class="side-link flex items-center gap-3 px-3 py-2 rounded-md text-slate-600 hover:bg-slate-100 hover:text-slate-900 transition font-medium">
+                    <i class="fas fa-life-ring w-5 text-center"></i>
+                    <span>Поддержка</span>
+                </a>
+            </nav>
+            <div class="p-4 border-t border-slate-200">
+                <a href="/logout" class="flex items-center gap-3 px-3 py-2 rounded-md text-slate-600 hover:bg-slate-100 hover:text-slate-900 transition font-medium">
+                    <i class="fas fa-sign-out-alt w-5 text-center"></i>
+                    <span>Выйти</span>
+                </a>
+            </div>
+        </aside>
+
+        <!-- Main content -->
+        <div class="flex-1 flex flex-col min-w-0">
+            <!-- Topbar -->
+            <header class="h-16 bg-white/80 backdrop-blur border-b border-slate-200 flex items-center justify-between lg:justify-end px-4 sm:px-6 lg:px-8 sticky top-0 z-30">
+                <button id="toggleSidebar" class="p-2 -ml-2 rounded-md text-slate-600 hover:bg-slate-100 hover:text-slate-900 lg:hidden">
+                    <i class="fas fa-bars text-lg"></i>
+                </button>
+                <div class="flex items-center gap-4 text-sm font-medium text-slate-600">
+                    <i class="fas fa-user-circle text-xl"></i>
+                    <span>Менеджер</span>
+                </div>
+            </header>
+
+            <!-- Page Content -->
+            <main class="flex-1 overflow-y-auto">
+                {% block content %}{% endblock %}
+            </main>
+        </div>
+    </div>
+
+    <script>
+      // Mobile sidebar toggle logic
+      const btn = document.getElementById('toggleSidebar');
+      const aside = document.getElementById('sidebar');
+      let sidebarOverlay = null;
+
+      function closeSidebar() {
+        if (aside) {
+          aside.classList.add('hidden');
+        }
+        if (sidebarOverlay) {
+          sidebarOverlay.remove();
+          sidebarOverlay = null;
+        }
+      }
+
+      function openSidebar() {
+        if (!aside) return;
+        aside.classList.remove('hidden');
+        
+        sidebarOverlay = document.createElement('div');
+        sidebarOverlay.className = 'fixed inset-0 bg-black/40 z-40 lg:hidden';
+        sidebarOverlay.addEventListener('click', closeSidebar, { once: true });
+        document.body.appendChild(sidebarOverlay);
+
+        aside.querySelectorAll('a.side-link').forEach(link => {
+          link.addEventListener('click', closeSidebar, { once: true });
+        });
+      }
+
+      if (btn) {
+        btn.addEventListener('click', () => {
+          if (aside && aside.classList.contains('hidden')) {
+            openSidebar();
+          } else {
+            closeSidebar();
+          }
+        });
+      }
+
+      // Active section highlighter
+      document.addEventListener('DOMContentLoaded', () => {
+          const links = document.querySelectorAll('.side-link');
+          const sections = document.querySelectorAll('section[id]');
+          if (links.length === 0 || sections.length === 0) return;
+          
+          const observer = new IntersectionObserver((entries) => {
+            entries.forEach(entry => {
+              if (entry.isIntersecting) {
+                const id = entry.target.id;
+                links.forEach(link => {
+                  link.classList.remove('bg-slate-100', 'text-slate-900');
+                  if (link.dataset.target === id) {
+                    link.classList.add('bg-slate-100', 'text-slate-900');
+                  }
+                });
+              }
+            });
+          }, { rootMargin: "-50% 0px -50% 0px", threshold: 0.1 });
+
+          sections.forEach(section => observer.observe(section));
+      });
+    </script>
+    {% block extra_js %}{% endblock %}
+</body>
+</html>
