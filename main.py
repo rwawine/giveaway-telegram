@@ -29,8 +29,8 @@ def start_bot():
     import time
     from telebot.apihelper import ApiTelegramException
     
-    max_retries = 3
-    retry_delay = 5
+    max_retries = 5
+    retry_delay = 10
     
     for attempt in range(max_retries):
         try:
@@ -43,10 +43,24 @@ def start_bot():
             
             # Очищаем pending updates для избежания конфликтов
             try:
-                bot.get_updates(offset=-1, timeout=1)
+                # Сбрасываем webhook если был установлен
+                bot.delete_webhook(drop_pending_updates=True)
+                logger.info("Webhook сброшен")
+            except:
+                pass
+            
+            try:
+                # Очищаем все pending updates более агрессивно
+                updates = bot.get_updates(offset=0, timeout=1)
+                if updates:
+                    last_update_id = updates[-1].update_id
+                    bot.get_updates(offset=last_update_id + 1, timeout=1)
                 logger.info("Очищены предыдущие обновления")
             except:
                 pass
+            
+            # Дополнительная пауза перед началом polling
+            time.sleep(2)
             
             # Используем polling с обработкой ошибок
             bot.infinity_polling(
@@ -60,8 +74,23 @@ def start_bot():
             if e.error_code == 409:  # Conflict: другой бот polling
                 logger.warning(f"Конфликт polling (попытка {attempt + 1}/{max_retries}). Ожидание {retry_delay}с...")
                 if attempt < max_retries - 1:
+                    # Пытаемся более агрессивно очистить все соединения
+                    try:
+                        temp_bot = create_bot()
+                        temp_bot.delete_webhook(drop_pending_updates=True)
+                        # Делаем несколько пустых запросов для "разрыва" старых соединений
+                        for _ in range(3):
+                            try:
+                                temp_bot.get_updates(offset=-1, timeout=1)
+                            except:
+                                pass
+                        del temp_bot
+                        logger.info("Выполнена агрессивная очистка соединений")
+                    except:
+                        pass
+                    
                     time.sleep(retry_delay)
-                    retry_delay *= 2  # Увеличиваем задержку
+                    retry_delay = min(retry_delay * 1.5, 60)  # Ограничиваем максимальную задержку
                     continue
                 else:
                     logger.error("Превышено максимальное количество попыток запуска polling")
