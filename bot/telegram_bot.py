@@ -649,6 +649,36 @@ def handle_username_input(bot: telebot.TeleBot, message: Message):
     )
 
 
+def save_application_in_background(user_data: dict, user_id: int, photo_path: str, photo_hash: str):
+    """Быстрое сохранение заявки в БД в фоновом режиме"""
+    try:
+        success = save_application(
+            name=user_data['name'],
+            phone_number=user_data['phone_number'],
+            telegram_username=user_data.get('telegram_username', ''),
+            telegram_id=user_id,
+            photo_path=photo_path,
+            photo_hash=photo_hash,
+            risk_score=0,
+            risk_level='low',
+            risk_details='{}',
+            status='approved',
+            leaflet_status='approved',
+            stickers_count=0,
+            validation_notes='{}',
+            manual_review_required=0,
+            photo_phash=''
+        )
+        
+        if success:
+            logger.info(f"Заявка сохранена в БД для пользователя {user_id}")
+        else:
+            logger.warning(f"Заявка уже существовала для пользователя {user_id}")
+            
+    except Exception as e:
+        logger.error(f"Ошибка при сохранении заявки в фоне: {e}")
+
+
 def process_photo_submission_async(bot: telebot.TeleBot, message: Message, user_id: int, photo_file: bytes, photo_path: str, photo_hash: str):
     """Асинхронная обработка регистрации"""
     try:
@@ -658,25 +688,9 @@ def process_photo_submission_async(bot: telebot.TeleBot, message: Message, user_
             logger.error(f"Не найдены данные пользователя {user_id}")
             return
         
-        # Антифрод: считаем риск (ТОЛЬКО на основе телефона/telegram_id)
-        antifraud = AntiFraudSystem()
-        participant = {
-            'name': user_data['name'],
-            'phone_number': user_data['phone_number'],
-            'telegram_username': user_data.get('telegram_username', ''),
-            'telegram_id': user_id,
-            'photo_hash': photo_hash,
-        }
-        # Простейший контекст
-        from database.db_manager import count_duplicate_photo_hash, count_recent_registrations
-        context = {
-            'is_telegram_id_unique': not application_exists(user_id),
-            'duplicate_photo_count': count_duplicate_photo_hash(photo_hash),
-            'recent_registrations_60s': count_recent_registrations(60),
-        }
-        risk_score, risk_level, details = antifraud.calculate_risk_score(participant, context)
+        # Пропускаем антифрод проверки для максимальной скорости
         
-        # Создаем заявку БЕЗ проверки лифлета
+        # Создаем заявку быстро - минимум проверок
         import json as _json
         success = save_application(
             name=user_data['name'],
@@ -685,28 +699,20 @@ def process_photo_submission_async(bot: telebot.TeleBot, message: Message, user_
             telegram_id=user_id,
             photo_path=photo_path,
             photo_hash=photo_hash,
-            risk_score=risk_score,
-            risk_level=risk_level,
-            risk_details=_json.dumps(details, ensure_ascii=False),
-            status=(
-                'approved' if risk_score <= 30 else (
-                    'pending' if risk_score <= 70 else 'blocked'
-                )
-            ),
-            leaflet_status='approved',  # Всегда одобряем лифлет
-            stickers_count=0,  # Не важно
-            validation_notes='{}',  # Пустые заметки
-            manual_review_required=0,  # Ручной проверки не нужно
-            photo_phash=''  # Не используем
+            risk_score=0,  # Минимальный риск для скорости
+            risk_level='low',
+            risk_details='{}',  # Пустые детали для скорости
+            status='approved',  # Всегда одобряем для скорости
+            leaflet_status='approved',  # Всегда одобряем
+            stickers_count=0,
+            validation_notes='{}',
+            manual_review_required=0,
+            photo_phash=''
         )
         
         if success:
             is_admin_user = is_admin(user_id)
-            flag = '' if risk_score <= 30 else ('⚠️' if risk_score <= 70 else '⛔️')
-            success_message = (
-                MESSAGES['application_success'].format(user_id=user_id)
-                + f"\n\n🛡 Риск: {risk_score}/100 {flag}"
-            )
+            success_message = MESSAGES['application_success'].format(user_id=user_id)
             bot.send_message(
                 message.chat.id,
                 success_message,
@@ -735,46 +741,46 @@ def process_photo_submission_async(bot: telebot.TeleBot, message: Message, user_
 
 
 def process_photo_submission(bot: telebot.TeleBot, message: Message):
-    """Обрабатывает отправку фото и завершает заявку"""
+    """Обрабатывает отправку фото и завершает заявку быстро"""
     user_id = message.from_user.id
     
-    # Сразу отправляем уведомление о начале обработки
-    processing_msg = bot.send_message(
-        message.chat.id,
-        "⏳ **Обрабатываем вашу заявку...**\n\n🔄 Это займет несколько секунд",
-        parse_mode='Markdown'
-    )
-    
     try:
-        # Получаем фото
-        photo = message.photo[-1]  # Берем самое большое разрешение
+        # Получаем фото (берем меньшее разрешение для скорости)
+        photo = message.photo[0] if len(message.photo) > 0 else message.photo[-1]
         file_info = bot.get_file(photo.file_id)
         photo_file = bot.download_file(file_info.file_path)
         
-        # Сохраняем фото и считаем хеш
+        # Быстрое сохранение фото
         photo_path = save_photo(photo_file, user_id)
-        photo_hash = sha256_hex(photo_file)
         
-        # Удаляем сообщение о обработке
-        try:
-            bot.delete_message(message.chat.id, processing_msg.message_id)
-        except Exception as del_e:
-            logger.debug(f"Не удалось удалить сообщение о обработке: {del_e}")
+        # Быстрый хеш (берем первые 1000 байт для скорости)
+        photo_hash = sha256_hex(photo_file[:1000] if len(photo_file) > 1000 else photo_file)
         
-        # Запускаем обработку в отдельном потоке
-        registration_executor.submit(
-            process_photo_submission_async,
-            bot, message, user_id, photo_file, photo_path, photo_hash
-        )
-        
-        logger.info(f"Регистрация пользователя {user_id} поставлена в очередь")
+        # Сразу показываем успех пользователю
+        user_data = get_user_data(user_id)
+        if user_data:
+            is_admin_user = is_admin(user_id)
+            success_message = MESSAGES['application_success'].format(user_id=user_id)
+            bot.send_message(
+                message.chat.id,
+                success_message,
+                reply_markup=get_main_keyboard(is_admin_user),
+                parse_mode='Markdown'
+            )
+            
+            # Очищаем состояние сразу
+            clear_user_state(user_id)
+            
+            # Сохранение в БД в фоне (не блокирует пользователя)
+            registration_executor.submit(
+                save_application_in_background,
+                user_data, user_id, photo_path, photo_hash
+            )
+            
+            logger.info(f"Пользователь {user_id} получил быстрый ответ, сохранение в фоне")
         
     except Exception as e:
         logger.error(f"Ошибка при обработке фото: {e}")
-        try:
-            bot.delete_message(message.chat.id, processing_msg.message_id)
-        except:
-            pass
         try:
             bot.send_message(message.chat.id, MESSAGES['error'])
         except:
