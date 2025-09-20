@@ -52,8 +52,7 @@ def start_bot():
             bot.infinity_polling(
                 timeout=10, 
                 long_polling_timeout=10, 
-                allowed_updates=['message', 'callback_query', 'edited_message'],
-                restart_on_change=True
+                allowed_updates=['message', 'callback_query', 'edited_message']
             )
             break  # Если дошли сюда - все ОК
             
