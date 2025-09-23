@@ -328,7 +328,7 @@
             <p class="mt-2 text-sm text-slate-500">Введите <strong>ОЧИСТИТЬ</strong> для подтверждения удаления всех данных:</p>
             <input type="text" id="clearDbConfirmText" class="mt-4 w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-red-500" placeholder="Введите ОЧИСТИТЬ">
         </div>
-        <div class="flex items-center justify-center p-4 bg-slate-50 border-t rounded-b-xl gap-2">
+        <div class="flex flex-col sm:flex-row items-center justify-center p-4 bg-slate-50 border-t rounded-b-xl gap-2 w-full">
             <button class="inline-flex items-center justify-center rounded-md border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 px-4 py-2 font-semibold transition-colors" onclick="closeModal('clearDbModal')">Отмена</button>
             <button id="confirmClearDbBtn" class="inline-flex items-center justify-center rounded-md bg-red-600 hover:bg-red-700 text-white px-3 py-2 font-semibold transition-colors"><i class="fas fa-trash-alt mr-1"></i>Обычная</button>
             <button id="confirmForceClearDbBtn" class="inline-flex items-center justify-center rounded-md bg-red-800 hover:bg-red-900 text-white px-3 py-2 font-semibold transition-colors"><i class="fas fa-exclamation-triangle mr-1"></i>Принудительная</button>
