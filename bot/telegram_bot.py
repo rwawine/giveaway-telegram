@@ -41,6 +41,64 @@ registration_executor = ThreadPoolExecutor(max_workers=10, thread_name_prefix="R
 RUNTIME_ADMINS = set()  # Админы, подтвержденные в текущем рантайме
 
 
+def validate_phone_number(phone: str) -> tuple[bool, str]:
+    """Валидирует номер телефона для стран: Беларусь (+375), Россия (+7), Казахстан (+77)"""
+    if not phone:
+        return False, "Номер телефона не может быть пустым"
+    
+    # Очищаем номер от пробелов и дефисов
+    clean_phone = phone.replace(' ', '').replace('-', '').replace('(', '').replace(')', '')
+    
+    # Если номер не начинается с +, добавляем
+    if not clean_phone.startswith('+'):
+        clean_phone = '+' + clean_phone
+    
+    # Проверяем на соответствие форматам стран
+    if clean_phone.startswith('+375'):
+        # Беларусь: +375 XX XXX-XX-XX (всего 13 символов)
+        if len(clean_phone) != 13 or not clean_phone[4:].isdigit():
+            return False, "Некорректный номер телефона Беларуси. Формат: +375XXXXXXXXX"
+        return True, clean_phone
+        
+    elif clean_phone.startswith('+77'):
+        # Казахстан: +77 XXX XXX XX XX (всего 12 символов)
+        if len(clean_phone) != 12 or not clean_phone[3:].isdigit():
+            return False, "Некорректный номер телефона Казахстана. Формат: +77XXXXXXXXX"
+        return True, clean_phone
+        
+    elif clean_phone.startswith('+7'):
+        # Россия: +7 XXX XXX-XX-XX (всего 12 символов)
+        if len(clean_phone) != 12 or not clean_phone[2:].isdigit():
+            return False, "Некорректный номер телефона России. Формат: +7XXXXXXXXXX"
+        return True, clean_phone
+    
+    else:
+        return False, "Поддерживаются только номера:\n🇧🇾 Беларуси (+375)\n🇷🇺 России (+7)\n🇰🇿 Казахстана (+77)"
+
+
+def validate_username(username: str) -> tuple[bool, str]:
+    """Валидирует username - только английские символы"""
+    if not username:
+        return False, "Логин не может быть пустым"
+    
+    # Убираем @ если есть
+    clean_username = username.lstrip('@')
+    
+    # Проверяем длину
+    if len(clean_username) < 3:
+        return False, "Логин должен содержать минимум 3 символа"
+    
+    if len(clean_username) > 32:
+        return False, "Логин не может быть длиннее 32 символов"
+    
+    # Проверяем, что содержит только разрешенные символы
+    import re
+    if not re.match(r'^[a-zA-Z][a-zA-Z0-9_]*$', clean_username):
+        return False, "Логин должен:\n• Начинаться с английской буквы\n• Содержать только английские буквы, цифры и _\n• Без пробелов и специальных символов"
+    
+    return True, clean_username
+
+
 def create_bot() -> telebot.TeleBot:
     """Создает и настраивает Telegram бота"""
     bot = telebot.TeleBot(BOT_TOKEN, threaded=True, num_threads=8)  # Увеличиваем количество потоков
@@ -390,7 +448,20 @@ def create_bot() -> telebot.TeleBot:
                     phone_number = contact.phone_number
                     if not phone_number.startswith('+'):
                         phone_number = '+' + phone_number
-                        
+                    
+                    # Валидируем номер телефона
+                    is_valid, result_or_error = validate_phone_number(phone_number)
+                    
+                    if not is_valid:
+                        logger.warning(f"⚠️ Некорректный номер из контакта: {phone_number}")
+                        bot.send_message(
+                            message.chat.id,
+                            f"❌ {result_or_error}"
+                        )
+                        return
+                    
+                    # Используем очищенный номер
+                    phone_number = result_or_error
                     logger.info(f"✅ Контакт валиден: {phone_number}")
                     
                     # Проверяем, не используется ли уже этот номер
@@ -440,9 +511,37 @@ def create_bot() -> telebot.TeleBot:
             if state == UserState.WAITING_PHOTO:
                 process_photo_submission(bot, message)
             else:
+                # Определяем, на каком шаге находится пользователь и даем соответствующую инструкцию
+                if state == UserState.WAITING_NAME:
+                    error_msg = ("❌ **ФОТО НА НЕПРАВИЛЬНОМ ШАГЕ!**\n\n"
+                               "📝 **ШАГ 1:** Сначала введите ваше имя\n"
+                               "📱 Шаг 2: Номер телефона\n"
+                               "👤 Шаг 3: Логин\n"
+                               "📸 Шаг 4: Фото лифлета\n\n"
+                               "💡 Введите ваше имя, чтобы продолжить!")
+                elif state == UserState.WAITING_PHONE:
+                    error_msg = ("❌ **ФОТО НА НЕПРАВИЛЬНОМ ШАГЕ!**\n\n"
+                               "✅ Шаг 1: Имя ✓\n"
+                               "📱 **ШАГ 2:** Сейчас нужен номер телефона\n"
+                               "👤 Шаг 3: Логин\n"
+                               "📸 Шаг 4: Фото лифлета\n\n"
+                               "💡 Введите или отправьте ваш номер телефона!")
+                elif state == UserState.WAITING_USERNAME:
+                    error_msg = ("❌ **ФОТО НА НЕПРАВИЛЬНОМ ШАГЕ!**\n\n"
+                               "✅ Шаг 1: Имя ✓\n"
+                               "✅ Шаг 2: Телефон ✓\n"
+                               "👤 **ШАГ 3:** Сейчас нужен ваш логин\n"
+                               "📸 Шаг 4: Фото лифлета\n\n"
+                               "💡 Введите ваш Telegram username!")
+                else:
+                    error_msg = ("❌ **НЕОЖИДАННАЯ ФОТОГРАФИЯ!**\n\n"
+                               "🤔 Фото принимается только на 4-м шаге регистрации.\n"
+                               "Нажмите \"🎯 Участвовать\" для начала регистрации.")
+                
                 bot.send_message(
                     message.chat.id,
-                    MESSAGES['invalid_photo']
+                    error_msg,
+                    parse_mode='Markdown'
                 )
                 
         except Exception as e:
@@ -629,18 +728,20 @@ def handle_phone_input(bot: telebot.TeleBot, message: Message):
     if text == KEYBOARD_BUTTONS['enter_manual']:
         bot.send_message(
             message.chat.id,
-            "📱 Введите ваш номер телефона:\n💡 Например: +375291234567",
+            "📱 Введите ваш номер телефона:\n\n💡 Поддерживаются номера:\n🇧🇾 Беларуси: +375291234567\n🇷🇺 России: +79001234567\n🇰🇿 Казахстана: +77001234567",
             reply_markup=get_back_keyboard()
         )
         return
     
-    # Если получен контакт или обычный текст как телефон
-    phone = text
+    # Валидируем номер телефона
+    is_valid, result_or_error = validate_phone_number(text)
     
-    # Простая валидация номера
-    if len(phone) < 10:
-        bot.send_message(message.chat.id, "❌ Некорректный номер телефона. Попробуйте еще раз.")
+    if not is_valid:
+        bot.send_message(message.chat.id, f"❌ {result_or_error}")
         return
+    
+    # Если валидация прошла, используем очищенный номер
+    phone = result_or_error
     
     # Проверяем, не используется ли уже этот номер
     if application_exists(user_id, phone):
@@ -665,13 +766,30 @@ def handle_username_input(bot: telebot.TeleBot, message: Message):
     user_id = message.from_user.id
     username = message.text.strip()
     
-    # Убираем @ если есть
-    if username.startswith('@'):
-        username = username[1:]
-    
     # Если пользователь не указал username, берем из профиля
     if not username and message.from_user.username:
         username = message.from_user.username
+    
+    # Если username все еще пустой, требуем ввести
+    if not username:
+        bot.send_message(
+            message.chat.id,
+            "❌ Логин не может быть пустым. Введите ваш Telegram username:"
+        )
+        return
+    
+    # Валидируем username
+    is_valid, result_or_error = validate_username(username)
+    
+    if not is_valid:
+        bot.send_message(
+            message.chat.id,
+            f"❌ {result_or_error}\n\n💡 Пример правильного логина: john_doe123"
+        )
+        return
+    
+    # Используем очищенный username
+    username = result_or_error
     
     set_user_data(user_id, 'telegram_username', username)
     set_user_state(user_id, UserState.WAITING_PHOTO)
@@ -870,20 +988,33 @@ def handle_status_check(bot: telebot.TeleBot, message: Message):
             # Форматируем дату
             from datetime import datetime
             try:
-                date_obj = datetime.fromisoformat(user_app['timestamp'])
-                formatted_date = date_obj.strftime("%d.%m.%y %H:%M")
-            except:
-                formatted_date = user_app['timestamp'][:16]
+                # Если timestamp уже объект datetime (для DuckDB)
+                if isinstance(user_app['timestamp'], datetime):
+                    date_obj = user_app['timestamp']
+                else:
+                    # Если строка (для SQLite)
+                    date_obj = datetime.fromisoformat(user_app['timestamp'].replace('Z', '+00:00'))
+                
+                # Используем полный формат даты: DD.MM.YYYY HH:MM
+                formatted_date = date_obj.strftime("%d.%m.%Y %H:%M")
+            except Exception as e:
+                logger.warning(f"Ошибка форматирования даты {user_app['timestamp']}: {e}")
+                # Fallback - берем первые 16 символов и пытаемся распарсить
+                try:
+                    fallback_str = str(user_app['timestamp'])[:16]
+                    if len(fallback_str) >= 16:
+                        formatted_date = fallback_str.replace('T', ' ')
+                    else:
+                        formatted_date = str(user_app['timestamp'])
+                except:
+                    formatted_date = "дата неизвестна"
             
-            # Дополнительные статусы по номеру участника
-            participant_line = f"\nНомер участника: #{user_app['participant_number']}" if user_app.get('participant_number') else ''
+            # Используем participant_number если есть, иначе id записи в БД
+            participant_number = user_app.get('participant_number') or user_app['id']
 
-            status_text = (
-                MESSAGES['status_check'].format(
-                    user_id=user_app['id'],
-                    date=formatted_date
-                )
-                + participant_line
+            status_text = MESSAGES['status_check'].format(
+                user_id=participant_number,
+                date=formatted_date
             )
             
             bot.send_message(

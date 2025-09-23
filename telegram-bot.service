@@ -1,0 +1,28 @@
+[Unit]
+Description=Telegram Bot with Web Admin Panel
+After=network.target
+Wants=network.target
+
+[Service]
+Type=simple
+User=botuser
+Group=botuser
+WorkingDirectory=/home/botuser/telegram-bot
+Environment=PATH=/home/botuser/telegram-bot/venv/bin
+ExecStart=/home/botuser/telegram-bot/venv/bin/python main.py
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=telegram-bot
+
+# Ограничения ресурсов
+MemoryMax=512M
+CPUQuota=50%
+
+# Переменные окружения
+Environment=PYTHONPATH=/home/botuser/telegram-bot
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target
