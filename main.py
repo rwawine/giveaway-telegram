@@ -41,26 +41,13 @@ def start_bot():
             bot_info = bot.get_me()
             logger.info(f"Бот подключен: @{bot_info.username} ({bot_info.first_name})")
             
-            # Очищаем pending updates для избежания конфликтов
+            # Сбрасываем webhook и очищаем pending updates автоматически
             try:
-                # Сбрасываем webhook если был установлен
                 bot.delete_webhook(drop_pending_updates=True)
-                logger.info("Webhook сброшен")
-            except:
+                logger.info("Webhook сброшен, pending обновления очищены автоматически")
+            except Exception as e:
+                logger.warning(f"Ошибка при сбросе webhook: {e}")
                 pass
-            
-            try:
-                # Очищаем все pending updates более агрессивно
-                updates = bot.get_updates(offset=0, timeout=1)
-                if updates:
-                    last_update_id = updates[-1].update_id
-                    bot.get_updates(offset=last_update_id + 1, timeout=1)
-                logger.info("Очищены предыдущие обновления")
-            except:
-                pass
-            
-            # Дополнительная пауза перед началом polling
-            time.sleep(2)
             
             # Используем polling с обработкой ошибок
             bot.infinity_polling(

@@ -49,7 +49,20 @@ ADMIN_IDS: List[int] = [
 ]
 
 # Настройки базы данных
-DATABASE_PATH = 'applications.db'
+DATABASE_TYPE = os.getenv('DATABASE_TYPE', 'duckdb')  # 'duckdb', 'sqlite' или 'postgresql'
+DATABASE_PATH = os.getenv('DATABASE_PATH', 'applications.duckdb')
+
+# Настройки для fallback на SQLite (если нужно)
+SQLITE_PATH = 'applications.db'
+
+def get_database_path() -> str:
+    """Возвращает путь к файлу базы данных"""
+    if DATABASE_TYPE == 'duckdb':
+        return DATABASE_PATH
+    elif DATABASE_TYPE == 'sqlite':
+        return SQLITE_PATH
+    else:
+        return DATABASE_PATH
 
 # Настройки файлов
 PHOTOS_DIR = 'photos'

@@ -383,10 +383,25 @@ def create_bot() -> telebot.TeleBot:
             
             if state == UserState.WAITING_PHONE:
                 contact: Contact = message.contact
+                logger.info(f"📱 ПОЛУЧЕН КОНТАКТ от TG_ID {user_id}")
                 
                 if contact.user_id == user_id:
                     # Пользователь отправил свой контакт
                     phone_number = contact.phone_number
+                    if not phone_number.startswith('+'):
+                        phone_number = '+' + phone_number
+                        
+                    logger.info(f"✅ Контакт валиден: {phone_number}")
+                    
+                    # Проверяем, не используется ли уже этот номер
+                    if application_exists(user_id, phone_number):
+                        logger.warning(f"⚠️ Номер {phone_number} уже используется")
+                        bot.send_message(
+                            message.chat.id,
+                            "❌ Заявка с этим номером телефона уже существует."
+                        )
+                        return
+                    
                     set_user_data(user_id, 'phone_number', phone_number)
                     
                     # Переходим к следующему шагу
@@ -396,7 +411,9 @@ def create_bot() -> telebot.TeleBot:
                         MESSAGES['ask_username'],
                         reply_markup=get_back_keyboard()
                     )
+                    logger.info(f"📝 Переход к вводу username для TG_ID {user_id}")
                 else:
+                    logger.warning(f"⚠️ Чужой контакт от TG_ID {user_id}")
                     bot.send_message(
                         message.chat.id,
                         "❌ Отправьте свой собственный контакт"
@@ -560,9 +577,12 @@ def is_admin(user_id: int) -> bool:
 def start_application_process(bot: telebot.TeleBot, message: Message):
     """Начинает процесс подачи заявки"""
     user_id = message.from_user.id
+    logger.info(f"🎯 КЛИК УЧАСТВОВАТЬ от пользователя TG_ID: {user_id}")
     
     # Проверяем, не подавал ли пользователь уже заявку
+    logger.info(f"🔍 Проверяем существующие заявки для TG_ID: {user_id}")
     if application_exists(user_id):
+        logger.warning(f"⚠️ Заявка уже существует для TG_ID: {user_id}")
         bot.send_message(
             message.chat.id,
             MESSAGES['already_applied'],
@@ -571,12 +591,14 @@ def start_application_process(bot: telebot.TeleBot, message: Message):
         return
     
     # Начинаем процесс
+    logger.info(f"✅ Заявки не найдено, начинаем регистрацию для TG_ID: {user_id}")
     set_user_state(user_id, UserState.WAITING_NAME)
     bot.send_message(
         message.chat.id,
         MESSAGES['application_start'],
         reply_markup=get_back_keyboard()
     )
+    logger.info(f"📝 Отправлено приглашение ввести имя для TG_ID: {user_id}")
 
 
 def handle_name_input(bot: telebot.TeleBot, message: Message):
@@ -601,7 +623,19 @@ def handle_name_input(bot: telebot.TeleBot, message: Message):
 def handle_phone_input(bot: telebot.TeleBot, message: Message):
     """Обрабатывает ввод номера телефона"""
     user_id = message.from_user.id
-    phone = message.text.strip()
+    text = message.text.strip()
+    
+    # Обрабатываем кнопку "Ввести вручную"
+    if text == KEYBOARD_BUTTONS['enter_manual']:
+        bot.send_message(
+            message.chat.id,
+            "📱 Введите ваш номер телефона:\n💡 Например: +375291234567",
+            reply_markup=get_back_keyboard()
+        )
+        return
+    
+    # Если получен контакт или обычный текст как телефон
+    phone = text
     
     # Простая валидация номера
     if len(phone) < 10:
