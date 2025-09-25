@@ -69,16 +69,17 @@ def export_to_csv(applications: List[Dict]) -> str:
                 csvfile.write("Заявок нет\n")
                 return file_path
                 
-            fieldnames = ['ID', 'Имя', 'Телефон', 'Telegram', 'Время подачи', 'Победитель']
+            fieldnames = ['ID', 'Имя', 'Телефон', 'Карта лояльности (последние 4)', 'Время подачи', 'Победитель']
             writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
             
             writer.writeheader()
             for app in applications:
+                last4 = (app.get('loyalty_card_number') or '')[-4:]
                 writer.writerow({
                     'ID': app['id'],
                     'Имя': app['name'],
                     'Телефон': app['phone_number'],
-                    'Telegram': app['telegram_username'] or 'Не указан',
+                    'Карта лояльности (последние 4)': last4 if last4 else '',
                     'Время подачи': app['timestamp'],
                     'Победитель': 'Да' if app['is_winner'] else 'Нет'
                 })
@@ -121,7 +122,7 @@ def export_to_excel(applications: List[Dict]) -> str:
                 'ID': app['id'],
                 'Имя': app['name'],
                 'Телефон': app['phone_number'],
-                'Telegram': app['telegram_username'] or 'Не указан',
+                'Карта лояльности': app.get('loyalty_card_number') or '',
                 'Telegram ID': app['telegram_id'],
                 'Время подачи': app['timestamp'],
                 'Путь к фото': app['photo_path'],

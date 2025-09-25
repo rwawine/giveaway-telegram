@@ -10,7 +10,7 @@ class UserState(Enum):
     IDLE = "idle"
     WAITING_NAME = "waiting_name"
     WAITING_PHONE = "waiting_phone"
-    WAITING_USERNAME = "waiting_username"
+    WAITING_LOYALTY_CARD = "waiting_loyalty_card"
     WAITING_PHOTO = "waiting_photo"
     WAITING_SUPPORT_MESSAGE = "waiting_support_message"
     WAITING_ADMIN_REPLY = "waiting_admin_reply"

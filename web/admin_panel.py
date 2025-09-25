@@ -19,6 +19,8 @@ from database.db_manager import (
     get_open_support_tickets, get_support_ticket, reply_support_ticket,
     count_duplicate_photo_hash, count_recent_registrations, update_risk, set_status,
     get_active_leaflet_template,
+    set_campaign_type, set_manual_review_status, update_admin_notes,
+    bulk_set_campaign_type, bulk_set_manual_review_status,
 )
 from utils.file_handler import export_to_csv, export_to_excel
 from utils.randomizer import create_winner_announcement, get_hash_seed
@@ -145,6 +147,7 @@ def create_web_app() -> Flask:
             per_page = int(request.args.get('per_page', 100))
             risk = request.args.get('risk')  # low/medium/high/None
             status = request.args.get('status')  # approved/pending/blocked/None
+            campaign = request.args.get('campaign')  # smile_500/sub_1500/pending/None
             
             # Кэшируем базовые данные
             cache_key_count = "total_applications_count"
@@ -155,7 +158,10 @@ def create_web_app() -> Flask:
             
             # Данные страницы не кэшируем т.к. зависят от параметров
             applications = get_applications_page(page, per_page, risk=risk, status=status)
-            list_total = get_filtered_applications_count(risk=risk, status=status) if (risk or status) else total_count
+            # Применяем фильтр по campaign_type на уровне Python для совместимости
+            if campaign:
+                applications = [a for a in applications if (a.get('campaign_type') or 'pending') == campaign]
+            list_total = get_filtered_applications_count(risk=risk, status=status, campaign=campaign) if (risk or status or campaign) else total_count
             
             logger.info("WEB: открыта админ-панель")
             # compute category stats
@@ -170,8 +176,23 @@ def create_web_app() -> Flask:
                     'low': get_filtered_applications_count(risk='low'),
                     'medium': get_filtered_applications_count(risk='medium'),
                     'high': get_filtered_applications_count(risk='high'),
-                }
+                },
+                'campaigns': {
+                    'smile_500': get_filtered_applications_count(campaign='smile_500'),
+                    'sub_1500': get_filtered_applications_count(campaign='sub_1500'),
+                    'pending': get_filtered_applications_count(campaign='pending'),
+                },
+                'manual_review': {
+                    'pending': get_filtered_applications_count(manual_review='pending'),
+                    'approved': get_filtered_applications_count(manual_review='approved'),
+                    'rejected': get_filtered_applications_count(manual_review='rejected'),
+                    'needs_clarification': get_filtered_applications_count(manual_review='needs_clarification'),
+                },
             }
+            # Готовность к розыгрышу: есть хотя бы 1 approved в каждой кампании
+            ready_for_lottery = (stats['manual_review']['approved'] > 0 and
+                                 get_filtered_applications_count(campaign='smile_500', manual_review='approved') > 0 and
+                                 get_filtered_applications_count(campaign='sub_1500', manual_review='approved') > 0)
             
             # active leaflet template info
             tpl = get_active_leaflet_template() or {}
@@ -188,8 +209,10 @@ def create_web_app() -> Flask:
                 total_pages=(list_total + per_page - 1) // per_page,
                 filter_risk=(risk or ''),
                 filter_status=(status or ''),
+                filter_campaign=(campaign or ''),
                 cat_stats=stats,
                 leaflet_required=leaflet_required,
+                ready_for_lottery=ready_for_lottery,
             )
             
         except Exception as e:
@@ -415,17 +438,23 @@ def create_web_app() -> Flask:
             data = request.get_json()
             name = data.get('name', '').strip()
             phone = data.get('phone', '').strip()
-            username = data.get('username', '').strip()
+            loyalty_card = data.get('loyalty_card', '').strip()
             
-            if not name or not phone:
-                return jsonify({'success': False, 'error': 'Имя и телефон обязательны'})
+            if not name or not phone or not loyalty_card:
+                return jsonify({'success': False, 'error': 'Имя, телефон и номер карты обязательны'})
             
             # Убираем все не-цифры из телефона
             phone_digits = ''.join(filter(str.isdigit, phone))
             if len(phone_digits) < 10:
                 return jsonify({'success': False, 'error': 'Некорректный номер телефона'})
             
-            user_id = add_user_manually(name, phone_digits, username)
+            # Валидация карты (только цифры и длина)
+            card_digits = ''.join(filter(str.isdigit, loyalty_card))
+            from config import LOYALTY_CARD_LENGTH
+            if len(card_digits) != LOYALTY_CARD_LENGTH:
+                return jsonify({'success': False, 'error': f'Номер карты должен содержать {LOYALTY_CARD_LENGTH} цифр'})
+            
+            user_id = add_user_manually(name, phone_digits, card_digits)
             
             if user_id:
                 logger.info(f"Добавлен пользователь через админку: {name}")
@@ -446,17 +475,23 @@ def create_web_app() -> Flask:
             data = request.get_json()
             name = data.get('name', '').strip()
             phone = data.get('phone', '').strip()
-            username = data.get('username', '').strip()
+            loyalty_card = data.get('loyalty_card', '').strip()
             
-            if not name or not phone:
-                return jsonify({'success': False, 'error': 'Имя и телефон обязательны'})
+            if not name or not phone or not loyalty_card:
+                return jsonify({'success': False, 'error': 'Имя, телефон и номер карты обязательны'})
             
             # Убираем все не-цифры из телефона
             phone_digits = ''.join(filter(str.isdigit, phone))
             if len(phone_digits) < 10:
                 return jsonify({'success': False, 'error': 'Некорректный номер телефона'})
             
-            if update_user(user_id, name, phone_digits, username):
+            # Убираем не-цифры из карты
+            from config import LOYALTY_CARD_LENGTH
+            card_digits = ''.join(filter(str.isdigit, loyalty_card))
+            if len(card_digits) != LOYALTY_CARD_LENGTH:
+                return jsonify({'success': False, 'error': f'Номер карты должен содержать {LOYALTY_CARD_LENGTH} цифр'})
+            
+            if update_user(user_id, name, phone_digits, card_digits):
                 logger.info(f"Обновлен пользователь через админку ID: {user_id}")
                 return jsonify({'success': True})
             else:
@@ -637,7 +672,7 @@ def create_web_app() -> Flask:
             participant = {
                 'name': user['name'],
                 'phone_number': user['phone_number'],
-                'telegram_username': user['telegram_username'],
+                'loyalty_card_number': user.get('loyalty_card_number') or '',
                 'telegram_id': user['telegram_id'],
                 'photo_hash': user['photo_hash'] or '',
             }
@@ -730,5 +765,85 @@ def create_web_app() -> Flask:
         except Exception as e:
             logger.error(f"Ошибка принудительной очистки базы данных: {e}")
             return jsonify({"success": False, "error": str(e)})
+
+    # Новые страницы: ручная модерация
+    @app.route('/applications/manual-review')
+    @require_auth
+    def page_manual_review():
+        try:
+            apps = get_all_applications()
+            # Фильтрация по статусу модерации и типу акции
+            campaign = request.args.get('campaign')
+            apps = [a for a in apps if (a.get('manual_review_status') or 'pending') == 'pending']
+            if campaign:
+                apps = [a for a in apps if (a.get('campaign_type') or 'pending') == campaign]
+            return render_template('manual_review.html', applications=apps, filter_campaign=(campaign or ''))
+        except Exception as e:
+            logger.error(f"Ошибка manual-review page: {e}")
+            return render_template('error.html', error=str(e))
+
+    @app.route('/applications/assign-campaign', methods=['GET', 'POST'])
+    @require_auth
+    def page_assign_campaign():
+        try:
+            if request.method == 'GET':
+                app_id = int(request.args.get('id', '0'))
+                user = get_user_by_id(app_id)
+                if not user:
+                    return render_template('error.html', error='Заявка не найдена')
+                return render_template('campaign_assignment.html', user=user)
+            else:
+                data = request.form
+                app_id = int(data.get('id'))
+                campaign_type = (data.get('campaign_type') or 'pending').strip()
+                review_status = (data.get('manual_review_status') or 'pending').strip()
+                notes = (data.get('admin_notes') or '').strip()
+                ok1 = set_campaign_type(app_id, campaign_type)
+                ok2 = set_manual_review_status(app_id, review_status)
+                ok3 = update_admin_notes(app_id, notes)
+                if ok1 and ok2 and ok3:
+                    clear_cache_key('total_applications_count')
+                    return redirect(url_for('admin_panel'))
+                return render_template('error.html', error='Не удалось обновить заявку')
+        except Exception as e:
+            logger.error(f"Ошибка assign-campaign: {e}")
+            return render_template('error.html', error=str(e))
+
+    @app.route('/winners/draw-lottery', methods=['POST'])
+    @require_auth
+    def api_draw_lottery():
+        try:
+            from utils.lottery_system import draw_lottery_by_campaign
+            result = draw_lottery_by_campaign()
+            # Сбрасываем кэш победителя/счетчиков
+            clear_cache_key('current_winner')
+            clear_cache_key('total_applications_count')
+            return jsonify({'success': True, 'result': result})
+        except Exception as e:
+            logger.error(f"Ошибка draw-lottery: {e}")
+            return jsonify({'success': False, 'error': str(e)})
+
+    @app.route('/applications/bulk-actions', methods=['POST'])
+    @require_auth
+    def api_bulk_actions():
+        try:
+            data = request.get_json(force=True)
+            action = (data.get('action') or '').strip()
+            ids = list(map(int, data.get('ids', [])))
+            if not ids:
+                return jsonify({'success': False, 'error': 'Не переданы идентификаторы'})
+            if action == 'assign_campaign':
+                campaign_type = (data.get('campaign_type') or 'pending').strip()
+                updated = bulk_set_campaign_type(ids, campaign_type)
+                return jsonify({'success': True, 'updated': updated})
+            elif action == 'set_review_status':
+                status = (data.get('manual_review_status') or 'pending').strip()
+                updated = bulk_set_manual_review_status(ids, status)
+                return jsonify({'success': True, 'updated': updated})
+            else:
+                return jsonify({'success': False, 'error': 'Неизвестное действие'})
+        except Exception as e:
+            logger.error(f"Ошибка bulk-actions: {e}")
+            return jsonify({'success': False, 'error': str(e)})
 
     return app

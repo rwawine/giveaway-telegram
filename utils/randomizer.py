@@ -87,7 +87,7 @@ def create_winner_announcement(winner: Dict, total_participants: int, seed: str 
 🎊 **РЕЗУЛЬТАТЫ РОЗЫГРЫША** 🎊
 
 👑 **Победитель:** {winner['name']}
-📱 **Telegram:** @{winner['telegram_username']}
+🧾 **Карта:** ****{(winner.get('loyalty_card_number') or '')[-4:]}
 📞 **Телефон:** {winner['phone_number']}
 
 📊 **Статистика розыгрыша:**

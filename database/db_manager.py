@@ -147,7 +147,7 @@ def init_duckdb():
                 id BIGINT PRIMARY KEY DEFAULT nextval('applications_id_seq'),
                 name TEXT NOT NULL,
                 phone_number TEXT NOT NULL UNIQUE,
-                telegram_username TEXT,
+                loyalty_card_number TEXT NOT NULL UNIQUE,
                 telegram_id BIGINT NOT NULL UNIQUE,
                 photo_path TEXT NOT NULL,
                 timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -157,11 +157,14 @@ def init_duckdb():
                 risk_level TEXT DEFAULT 'low',
                 risk_details TEXT,
                 status TEXT DEFAULT 'pending',
+                campaign_type TEXT CHECK (campaign_type IN ('smile_500', 'sub_1500', 'pending')),
+                admin_notes TEXT,
+                manual_review_status TEXT DEFAULT 'pending' CHECK (manual_review_status IN ('pending', 'approved', 'rejected', 'needs_clarification')),
                 participant_number INTEGER UNIQUE,
                 leaflet_status TEXT DEFAULT 'pending',
                 stickers_count INTEGER DEFAULT 0,
                 validation_notes TEXT,
-                manual_review_required BOOLEAN DEFAULT FALSE,
+                manual_review_required BOOLEAN DEFAULT TRUE,
                 photo_phash TEXT
             )
         """)
@@ -204,8 +207,11 @@ def init_duckdb():
         indexes = [
             "CREATE INDEX IF NOT EXISTS idx_applications_telegram_id ON applications(telegram_id)",
             "CREATE INDEX IF NOT EXISTS idx_applications_phone_number ON applications(phone_number)",
+            "CREATE INDEX IF NOT EXISTS idx_applications_loyalty_card ON applications(loyalty_card_number)",
             "CREATE INDEX IF NOT EXISTS idx_applications_is_winner ON applications(is_winner)",
             "CREATE INDEX IF NOT EXISTS idx_applications_status ON applications(status)",
+            "CREATE INDEX IF NOT EXISTS idx_applications_campaign_type ON applications(campaign_type)",
+            "CREATE INDEX IF NOT EXISTS idx_applications_manual_review ON applications(manual_review_status)",
             "CREATE INDEX IF NOT EXISTS idx_applications_leaflet_status ON applications(leaflet_status)",
             "CREATE INDEX IF NOT EXISTS idx_applications_photo_phash ON applications(photo_phash)",
             "CREATE INDEX IF NOT EXISTS idx_support_tickets_user_id ON support_tickets(user_id)",
@@ -258,7 +264,7 @@ def init_sqlite():
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 name TEXT NOT NULL,
                 phone_number TEXT NOT NULL UNIQUE,
-                telegram_username TEXT,
+                loyalty_card_number TEXT NOT NULL UNIQUE,
                 telegram_id INTEGER NOT NULL UNIQUE,
                 photo_path TEXT NOT NULL,
                 timestamp TEXT NOT NULL,
@@ -268,11 +274,14 @@ def init_sqlite():
                 risk_level TEXT DEFAULT 'low',
                 risk_details TEXT,
                 status TEXT DEFAULT 'pending',
+                campaign_type TEXT CHECK (campaign_type IN ('smile_500', 'sub_1500', 'pending')),
+                admin_notes TEXT,
+                manual_review_status TEXT DEFAULT 'pending' CHECK (manual_review_status IN ('pending', 'approved', 'rejected', 'needs_clarification')),
                 participant_number INTEGER UNIQUE,
                 leaflet_status TEXT DEFAULT 'pending',
                 stickers_count INTEGER DEFAULT 0,
                 validation_notes TEXT,
-                manual_review_required INTEGER DEFAULT 0,
+                manual_review_required INTEGER DEFAULT 1,
                 photo_phash TEXT
             )
         ''')
@@ -370,13 +379,16 @@ def get_application_by_telegram_id(telegram_id: int) -> Optional[Dict[str, Any]]
 
 @db_retry(max_retries=5, delay=0.2)
 def assign_next_participant_number(application_id: int) -> Optional[int]:
-    """Присваивает следующий уникальный participant_number, начиная с 1001"""
+    """Присваивает следующий уникальный participant_number в формате 984765378"""
     try:
         with get_db_connection() as conn:
             cursor = conn.cursor()
             cursor.execute('SELECT MAX(participant_number) FROM applications')
             max_num = cursor.fetchone()[0]
-            next_num = 1001 if not max_num else int(max_num) + 1
+            
+            # Начинаем с 984765378 или следующий номер
+            next_num = 984765378 if not max_num else int(max_num) + 1
+            
             cursor.execute(
                 'UPDATE applications SET participant_number = ? WHERE id = ? AND participant_number IS NULL',
                 (next_num, application_id)
@@ -545,15 +557,15 @@ def set_status(application_id: int, status: str) -> bool:
 
 
 @db_retry(max_retries=5, delay=0.2)
-def save_application(name: str, phone_number: str, telegram_username: str, 
-                    telegram_id: int, photo_path: str, photo_hash: str = "",
+def save_application(name: str, phone_number: str, telegram_username: str = "", 
+                    telegram_id: int = 0, photo_path: str = "", photo_hash: str = "",
                     risk_score: int = 0, risk_level: str = "low", risk_details: str = "",
                     status: str = "pending",
                     participant_number: Optional[int] = None,
                     leaflet_status: str = "pending",
                     stickers_count: int = 0,
                     validation_notes: str = "",
-                    manual_review_required: int = 0,
+                    manual_review_required: int = 1,
                     photo_phash: str = "") -> bool:
     """Сохраняет заявку в базу данных"""
     try:
@@ -590,7 +602,7 @@ def save_application(name: str, phone_number: str, telegram_username: str,
                         participant_number, leaflet_status, stickers_count, validation_notes, 
                         manual_review_required, photo_phash
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ''', (
                     name, phone_number, telegram_username, telegram_id, photo_path, timestamp,
                     photo_hash, risk_score, risk_level, risk_details, status,
@@ -599,12 +611,13 @@ def save_application(name: str, phone_number: str, telegram_username: str,
                 ))
                 app_id = cursor.lastrowid
             
-            # Если статус approved и номер не задан - присваиваем
-            if status == 'approved' and participant_number is None:
+            # Присваиваем номер участника всем новым заявкам
+            if participant_number is None:
                 try:
                     cursor.execute('SELECT MAX(participant_number) FROM applications')
                     max_num = cursor.fetchone()[0]
-                    next_num = 1001 if not max_num else int(max_num) + 1
+                    # Начинаем с 984765378
+                    next_num = 984765378 if not max_num else int(max_num) + 1
                     cursor.execute(
                         'UPDATE applications SET participant_number = ? WHERE id = ?',
                         (next_num, app_id)
@@ -871,7 +884,7 @@ def get_winner():
         with get_db_connection() as conn:
             cursor = conn.cursor()
             cursor.execute('''
-                SELECT id, name, phone_number, telegram_username, telegram_id, photo_path, timestamp
+                SELECT id, name, phone_number, loyalty_card_number, telegram_id, photo_path, timestamp
                 FROM applications 
                 WHERE is_winner = TRUE
                 LIMIT 1
@@ -887,7 +900,7 @@ def get_winner():
                     'id': row[0],
                     'name': row[1],
                     'phone_number': row[2],
-                    'telegram_username': row[3],
+                    'loyalty_card_number': row[3],
                     'telegram_id': row[4],
                     'photo_path': row[5],
                     'timestamp': timestamp
@@ -1133,7 +1146,7 @@ def get_open_support_tickets():
         return []
 
 
-def add_user_manually(name: str, phone_number: str, telegram_username: str = "", telegram_id: int = 0):
+def add_user_manually(name: str, phone_number: str, loyalty_card_number: str = "", telegram_id: int = 0):
     """Добавляет пользователя вручную через админку"""
     try:
         photo_path = "manual_entry.jpg"  # Заглушка для фото
@@ -1144,17 +1157,17 @@ def add_user_manually(name: str, phone_number: str, telegram_username: str = "",
             if DATABASE_TYPE == 'duckdb':
                 current_timestamp = datetime.now()
                 cursor.execute('''
-                    INSERT INTO applications (name, phone_number, telegram_username, telegram_id, photo_path, timestamp)
+                    INSERT INTO applications (name, phone_number, loyalty_card_number, telegram_id, photo_path, timestamp)
                     VALUES (?, ?, ?, ?, ?, ?)
                     RETURNING id
-                ''', (name, phone_number, telegram_username, telegram_id, photo_path, current_timestamp))
+                ''', (name, phone_number, loyalty_card_number, telegram_id, photo_path, current_timestamp))
                 user_id = cursor.fetchone()[0]
             else:
                 timestamp = datetime.now().isoformat()
                 cursor.execute('''
-                    INSERT INTO applications (name, phone_number, telegram_username, telegram_id, photo_path, timestamp)
+                    INSERT INTO applications (name, phone_number, loyalty_card_number, telegram_id, photo_path, timestamp)
                     VALUES (?, ?, ?, ?, ?, ?)
-                ''', (name, phone_number, telegram_username, telegram_id, photo_path, timestamp))
+                ''', (name, phone_number, loyalty_card_number, telegram_id, photo_path, timestamp))
                 user_id = cursor.lastrowid
             conn.commit()
             logger.info(f"Добавлен пользователь вручную: {name}")
@@ -1165,16 +1178,16 @@ def add_user_manually(name: str, phone_number: str, telegram_username: str = "",
         return None
 
 
-def update_user(user_id: int, name: str, phone_number: str, telegram_username: str = ""):
+def update_user(user_id: int, name: str, phone_number: str, loyalty_card_number: str = ""):
     """Обновляет данные пользователя"""
     try:
         with get_db_connection() as conn:
             cursor = conn.cursor()
             cursor.execute('''
                 UPDATE applications 
-                SET name = ?, phone_number = ?, telegram_username = ?
+                SET name = ?, phone_number = ?, loyalty_card_number = ?
                 WHERE id = ?
-            ''', (name, phone_number, telegram_username, user_id))
+            ''', (name, phone_number, loyalty_card_number, user_id))
             
             conn.commit()
             
@@ -1196,8 +1209,9 @@ def get_user_by_id(user_id: int):
         with get_db_connection() as conn:
             cursor = conn.cursor()
             cursor.execute('''
-                SELECT id, name, phone_number, telegram_username, telegram_id, 
-                       photo_path, timestamp, is_winner, photo_hash, risk_score, risk_level, risk_details, status
+                SELECT id, name, phone_number, loyalty_card_number, telegram_id, 
+                       photo_path, timestamp, is_winner, photo_hash, risk_score, risk_level, risk_details, status,
+                       campaign_type, admin_notes, manual_review_status
                 FROM applications 
                 WHERE id = ?
             ''', (user_id,))
@@ -1212,7 +1226,7 @@ def get_user_by_id(user_id: int):
                     'id': row[0],
                     'name': row[1],
                     'phone_number': row[2],
-                    'telegram_username': row[3],
+                    'loyalty_card_number': row[3],
                     'telegram_id': row[4],
                     'photo_path': row[5],
                     'timestamp': timestamp,
@@ -1221,13 +1235,140 @@ def get_user_by_id(user_id: int):
                     'risk_score': row[9] or 0,
                     'risk_level': row[10] or 'low',
                     'risk_details': row[11] or '',
-                    'status': row[12] or 'pending'
+                    'status': row[12] or 'pending',
+                    'campaign_type': row[13] or 'pending',
+                    'admin_notes': row[14] or '',
+                    'manual_review_status': row[15] or 'pending'
                 }
             return None
             
     except Exception as e:
         logger.error(f"Ошибка при получении пользователя: {e}")
         return None
+
+
+def loyalty_card_exists(loyalty_card_number: str) -> bool:
+    """Проверяет, существует ли заявка с таким номером карты лояльности"""
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('SELECT 1 FROM applications WHERE loyalty_card_number = ? LIMIT 1', (loyalty_card_number,))
+            return cursor.fetchone() is not None
+    except Exception as e:
+        logger.error(f"Ошибка проверки карты лояльности: {e}")
+        return False
+
+
+def get_filtered_applications_count(risk: str = None, status: str = None, campaign: str = None, manual_review: str = None) -> int:
+    """Возвращает количество заявок по фильтрам"""
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            where_conditions = []
+            params = []
+            if status and status in ("approved", "pending", "blocked"):
+                where_conditions.append("COALESCE(status, 'pending') = ?")
+                params.append(status)
+            if risk and risk in ("low", "medium", "high"):
+                if risk == "low":
+                    where_conditions.append("(COALESCE(risk_score, 0) <= 30)")
+                elif risk == "medium":
+                    where_conditions.append("(COALESCE(risk_score, 0) > 30 AND COALESCE(risk_score, 0) <= 70)")
+                else:
+                    where_conditions.append("(COALESCE(risk_score, 0) > 70)")
+            if campaign and campaign in ('smile_500', 'sub_1500', 'pending'):
+                where_conditions.append("COALESCE(campaign_type, 'pending') = ?")
+                params.append(campaign)
+            if manual_review and manual_review in ('pending', 'approved', 'rejected', 'needs_clarification'):
+                where_conditions.append("COALESCE(manual_review_status, 'pending') = ?")
+                params.append(manual_review)
+            sql = "SELECT COUNT(*) FROM applications"
+            if where_conditions:
+                sql += " WHERE " + " AND ".join(where_conditions)
+            cursor.execute(sql, tuple(params))
+            return cursor.fetchone()[0] or 0
+    except Exception as e:
+        logger.error(f"Ошибка подсчета по фильтрам: {e}")
+        return 0
+
+
+def set_campaign_type(application_id: int, campaign_type: str) -> bool:
+    """Устанавливает тип акции для заявки"""
+    try:
+        if campaign_type not in ('smile_500', 'sub_1500', 'pending'):
+            raise ValueError('Недопустимый тип акции')
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('UPDATE applications SET campaign_type = ? WHERE id = ?', (campaign_type, application_id))
+            conn.commit()
+            return cursor.rowcount > 0
+    except Exception as e:
+        logger.error(f"Ошибка установки campaign_type: {e}")
+        return False
+
+
+def set_manual_review_status(application_id: int, status: str) -> bool:
+    """Обновляет статус ручной модерации"""
+    try:
+        if status not in ('pending', 'approved', 'rejected', 'needs_clarification'):
+            raise ValueError('Недопустимый статус модерации')
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('UPDATE applications SET manual_review_status = ? WHERE id = ?', (status, application_id))
+            conn.commit()
+            return cursor.rowcount > 0
+    except Exception as e:
+        logger.error(f"Ошибка обновления manual_review_status: {e}")
+        return False
+
+
+def update_admin_notes(application_id: int, notes: str) -> bool:
+    """Сохраняет комментарии администратора"""
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('UPDATE applications SET admin_notes = ? WHERE id = ?', (notes or '', application_id))
+            conn.commit()
+            return cursor.rowcount > 0
+    except Exception as e:
+        logger.error(f"Ошибка обновления admin_notes: {e}")
+        return False
+
+
+def bulk_set_campaign_type(ids: List[int], campaign_type: str) -> int:
+    """Массово назначает тип акции для списка заявок"""
+    try:
+        if not ids:
+            return 0
+        if campaign_type not in ('smile_500', 'sub_1500', 'pending'):
+            raise ValueError('Недопустимый тип акции')
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            qmarks = ','.join('?' for _ in ids)
+            cursor.execute(f'UPDATE applications SET campaign_type = ? WHERE id IN ({qmarks})', tuple([campaign_type] + ids))
+            conn.commit()
+            return cursor.rowcount
+    except Exception as e:
+        logger.error(f"Ошибка массового назначения campaign_type: {e}")
+        return 0
+
+
+def bulk_set_manual_review_status(ids: List[int], status: str) -> int:
+    """Массово обновляет статус ручной модерации"""
+    try:
+        if not ids:
+            return 0
+        if status not in ('pending', 'approved', 'rejected', 'needs_clarification'):
+            raise ValueError('Недопустимый статус модерации')
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            qmarks = ','.join('?' for _ in ids)
+            cursor.execute(f'UPDATE applications SET manual_review_status = ? WHERE id IN ({qmarks})', tuple([status] + ids))
+            conn.commit()
+            return cursor.rowcount
+    except Exception as e:
+        logger.error(f"Ошибка массового обновления manual_review_status: {e}")
+        return 0
 
 
 def clear_all_data():

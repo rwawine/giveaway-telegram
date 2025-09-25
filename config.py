@@ -16,6 +16,12 @@ ADMIN_PASSWORD = os.getenv('ADMIN_PASSWORD', 'admin123')
 WEB_PORT = int(os.getenv('WEB_PORT', '5000'))
 WEB_BASE_URL = os.getenv('WEB_BASE_URL', 'http://127.0.0.1:5000')
 
+# Новые переменные окружения для акций и карт лояльности
+LOYALTY_CARD_LENGTH = int(os.getenv('LOYALTY_CARD_LENGTH', '10'))
+CAMPAIGN_1_NAME = os.getenv('CAMPAIGN_1_NAME', 'Оплата улыбкой от 500₽')
+CAMPAIGN_2_NAME = os.getenv('CAMPAIGN_2_NAME', 'Субакция от 1500₽')
+MANUAL_REVIEW_REQUIRED = os.getenv('MANUAL_REVIEW_REQUIRED', 'true').strip().lower() in ('1','true','yes','y','on')
+
 
 def get_local_ip() -> str:
     """Возвращает локальный IP-адрес машины (LAN), с надежным фолбэком на 127.0.0.1"""
@@ -70,10 +76,10 @@ EXPORTS_DIR = 'exports'
 
 # Сообщения бота
 MESSAGES = {
-    'welcome': (
-        "🎉 **ДОБРО ПОЖАЛОВАТЬ В РОЗЫГРЫШ ПРИЗОВ!**\n\n"
-        "🎯 Готовы выиграть крутые призы?\n"
-        "🚀 Регистрация займет всего 1 минуту!\n\n"
+'welcome': (
+        "🎉 **ДОБРО ПОЖАЛОВАТЬ!**\n\n"
+        "📝 Регистрация займет ~1 минуту.\n"
+        "🎲 Розыгрыш: один победитель.\n\n"
         "👇 Выберите действие в меню ниже"
     ),
     'already_applied': (
@@ -94,10 +100,10 @@ MESSAGES = {
         "Прогресс: [████░░░░░░] 50%\n\n"
         "👇 Выберите способ:"
     ),
-    'ask_username': (
-        "💬 **ШАГ 3 из 4 - Telegram**\n\n"
-        "📱 Укажите ваш ник в Telegram\n"
-        "💡 Например: @username\n\n"
+'ask_loyalty_card': (
+        "🧾 **ШАГ 3 из 4 — Номер карты лояльности**\n\n"
+        f"🔢 Введите номер вашей карты (ровно {LOYALTY_CARD_LENGTH} цифр)\n"
+        "💡 Без пробелов и символов, только цифры\n\n"
         "Прогресс: [██████░░░░] 75%"
     ),
     'ask_photo': (
@@ -109,7 +115,7 @@ MESSAGES = {
     'application_success': (
         "🎉 **ПОЗДРАВЛЯЕМ!**\n\n"
         "✅ Вы успешно зарегистрированы!\n"
-        "🎯 Ваш номер участника: #{user_id}\n\n"
+        "🎯 Ваш номер участника: #{participant_number}\n\n"
         "📅 Розыгрыш состоится скоро\n"
         "👥 Следите за обновлениями\n\n"
         "🍀 Удачи! 🍀"
@@ -126,12 +132,12 @@ MESSAGES = {
     ),
     'admin_not_authorized': "🔒 **ДОСТУП ЗАПРЕЩЕН**\n\n❌ У вас нет прав администратора",
     'no_applications': "📋 **ПУСТО**\n\n🤷‍♂️ Заявок пока нет. Как только появятся - увидите здесь!",
-    'winner_selected': "🏆 **ПОБЕДИТЕЛЬ ОПРЕДЕЛЕН!**\n\n🎊 Поздравляем: **{name}** (@{username})",
+'winner_selected': "🏆 **ПОБЕДИТЕЛЬ ОПРЕДЕЛЕН!**\n\n🎊 Поздравляем: **{name}** (Карта: ****{card_last4})",
     'export_ready': "📊 **ЭКСПОРТ ГОТОВ!**\n\n✅ Файл отправлен",
     'status_check': (
         "📋 **ВАШ СТАТУС В РОЗЫГРЫШЕ**\n\n"
         "┌─────────────────────────────┐\n"
-        "│ 👤 Участник #{user_id}              │\n"
+        "│ 👤 Участник #{participant_number}              │\n"
         "│                             │\n"
         "│ ✅ Регистрация завершена    │\n"
         "│ 📅 Дата: {date}  │\n"

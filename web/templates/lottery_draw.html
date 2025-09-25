@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+
+{% block title %}Розыгрыш{% endblock %}
+
+{% block content %}
+<div class="p-6 space-y-6">
+  <h1 class="text-2xl font-bold text-slate-900">Проведение розыгрыша</h1>
+  <div class="bg-white border border-slate-200 rounded-xl p-6">
+    <p class="text-slate-600 mb-4">Розыгрыш выбирает по одному победителю из каждой акции ("Оплата улыбкой" и "Субакция"). Участвуют только заявки со статусом модерации "Одобрено".</p>
+    <button id="drawBtn" class="inline-flex items-center justify-center rounded-md bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 font-semibold"><i class="fas fa-dice mr-2"></i>Провести розыгрыш</button>
+    <div id="drawResult" class="mt-6 text-sm"></div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const btn = document.getElementById('drawBtn');
+const out = document.getElementById('drawResult');
+btn?.addEventListener('click', async () => {
+  btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Выполняется...';
+  try {
+    const res = await fetch('/winners/draw-lottery', { method: 'POST' });
+    const data = await res.json();
+    if (!data.success) throw new Error(data.error || 'Ошибка');
+    const w = data.result.winners || {};
+    out.innerHTML = `
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        ${['smile_500','sub_1500'].map(key => w[key] ? `
+          <div class="p-4 border rounded-lg">
+            <div class="font-semibold mb-1">${key === 'smile_500' ? 'Оплата улыбкой' : 'Субакция'}</div>
+            <div>👤 ${w[key].name}</div>
+            <div>🧾 ****${(w[key].loyalty_card_number || '').slice(-4)}</div>
+            <div>📞 ${w[key].phone_number}</div>
+          </div>` : `
+          <div class="p-4 border rounded-lg text-slate-500">Нет участника для ${key}</div>`).join('')}
+      </div>`;
+  } catch (e) {
+    out.textContent = 'Ошибка: ' + e.message;
+  } finally {
+    btn.disabled = false; btn.innerHTML = '<i class="fas fa-dice mr-2"></i>Провести розыгрыш';
+  }
+});
+</script>
+{% endblock %}

@@ -13,13 +13,14 @@ from telebot.types import Message, CallbackQuery, Contact
 
 from config import (
     BOT_TOKEN, ADMIN_IDS, MESSAGES, KEYBOARD_BUTTONS, SUPPORT_MESSAGES, get_web_base_url,
-    BROADCAST_RATE_PER_SEC, BROADCAST_MAX_RETRIES, BROADCAST_RETRY_BASE_DELAY
+    BROADCAST_RATE_PER_SEC, BROADCAST_MAX_RETRIES, BROADCAST_RETRY_BASE_DELAY,
+    LOYALTY_CARD_LENGTH, MANUAL_REVIEW_REQUIRED
 )
 from database.db_manager import (
     save_application, application_exists, get_all_applications,
     get_random_winner, get_winner, get_applications_stats, get_applications_count,
     create_support_ticket, get_support_ticket, reply_support_ticket,
-    get_open_support_tickets
+    get_open_support_tickets, loyalty_card_exists
 )
 from bot.keyboards import (
     get_main_keyboard, get_phone_keyboard, get_back_keyboard,
@@ -76,27 +77,14 @@ def validate_phone_number(phone: str) -> tuple[bool, str]:
         return False, "Поддерживаются только номера:\n🇧🇾 Беларуси (+375)\n🇷🇺 России (+7)\n🇰🇿 Казахстана (+77)"
 
 
-def validate_username(username: str) -> tuple[bool, str]:
-    """Валидирует username - только английские символы"""
-    if not username:
-        return False, "Логин не может быть пустым"
-    
-    # Убираем @ если есть
-    clean_username = username.lstrip('@')
-    
-    # Проверяем длину
-    if len(clean_username) < 3:
-        return False, "Логин должен содержать минимум 3 символа"
-    
-    if len(clean_username) > 32:
-        return False, "Логин не может быть длиннее 32 символов"
-    
-    # Проверяем, что содержит только разрешенные символы
-    import re
-    if not re.match(r'^[a-zA-Z][a-zA-Z0-9_]*$', clean_username):
-        return False, "Логин должен:\n• Начинаться с английской буквы\n• Содержать только английские буквы, цифры и _\n• Без пробелов и специальных символов"
-    
-    return True, clean_username
+def validate_loyalty_card(card: str) -> tuple[bool, str]:
+    """Валидирует номер карты лояльности: только цифры и фиксированная длина"""
+    if not card:
+        return False, "Номер карты не может быть пустым"
+    clean = ''.join(ch for ch in card if ch.isdigit())
+    if len(clean) != LOYALTY_CARD_LENGTH:
+        return False, f"Номер карты должен содержать ровно {LOYALTY_CARD_LENGTH} цифр"
+    return True, clean
 
 
 def create_bot() -> telebot.TeleBot:
@@ -246,7 +234,9 @@ def create_bot() -> telebot.TeleBot:
             text = "📋 **Список заявок:**\n\n"
             for i, app in enumerate(applications, 1):
                 winner_mark = "👑 " if app['is_winner'] else ""
-                text += f"{i}. {winner_mark}{app['name']} (@{app['telegram_username']})\n"
+                masked = (str(app.get('loyalty_card_number') or '')[:-4].replace('\n','') + '****' + str(app.get('loyalty_card_number') or '')[-4:]) if app.get('loyalty_card_number') else '—'
+                text += f"{i}. {winner_mark}{app['name']}\n"
+                text += f"   🧾 Карта: {masked}\n"
                 text += f"   📞 {app['phone_number']}\n"
                 text += f"   🕐 {app['timestamp']}\n\n"
             
@@ -285,7 +275,7 @@ def create_bot() -> telebot.TeleBot:
                 bot.send_message(message.chat.id, "❌ Ошибка при выборе победителя")
                 return
             
-            # Создаем объявление о победителе
+# Создаем объявление о победителе
             announcement = create_winner_announcement(
                 winner, len(applications), get_hash_seed()
             )
@@ -361,8 +351,8 @@ def create_bot() -> telebot.TeleBot:
                 handle_name_input(bot, message)
             elif state == UserState.WAITING_PHONE:
                 handle_phone_input(bot, message)
-            elif state == UserState.WAITING_USERNAME:
-                handle_username_input(bot, message)
+            elif state == UserState.WAITING_LOYALTY_CARD:
+                handle_loyalty_card_input(bot, message)
             elif state == UserState.WAITING_SUPPORT_MESSAGE:
                 logger.info(f"Поддержка: прием сообщения от {user_id}")
                 handle_support_message_input(bot, message)
@@ -476,13 +466,13 @@ def create_bot() -> telebot.TeleBot:
                     set_user_data(user_id, 'phone_number', phone_number)
                     
                     # Переходим к следующему шагу
-                    set_user_state(user_id, UserState.WAITING_USERNAME)
+                    set_user_state(user_id, UserState.WAITING_LOYALTY_CARD)
                     bot.send_message(
                         message.chat.id,
-                        MESSAGES['ask_username'],
+                        MESSAGES['ask_loyalty_card'],
                         reply_markup=get_back_keyboard()
                     )
-                    logger.info(f"📝 Переход к вводу username для TG_ID {user_id}")
+                    logger.info(f"📝 Переход к вводу номера карты лояльности для TG_ID {user_id}")
                 else:
                     logger.warning(f"⚠️ Чужой контакт от TG_ID {user_id}")
                     bot.send_message(
@@ -526,13 +516,13 @@ def create_bot() -> telebot.TeleBot:
                                "👤 Шаг 3: Логин\n"
                                "📸 Шаг 4: Фото лифлета\n\n"
                                "💡 Введите или отправьте ваш номер телефона!")
-                elif state == UserState.WAITING_USERNAME:
+                elif state == UserState.WAITING_LOYALTY_CARD:
                     error_msg = ("❌ **ФОТО НА НЕПРАВИЛЬНОМ ШАГЕ!**\n\n"
                                "✅ Шаг 1: Имя ✓\n"
                                "✅ Шаг 2: Телефон ✓\n"
-                               "👤 **ШАГ 3:** Сейчас нужен ваш логин\n"
+                               "🧾 **ШАГ 3:** Сейчас нужен номер карты лояльности\n"
                                "📸 Шаг 4: Фото лифлета\n\n"
-                               "💡 Введите ваш Telegram username!")
+                               "💡 Введите номер карты (только цифры)!")
                 else:
                     error_msg = ("❌ **НЕОЖИДАННАЯ ФОТОГРАФИЯ!**\n\n"
                                "🤔 Фото принимается только на 4-м шаге регистрации.\n"
@@ -752,46 +742,36 @@ def handle_phone_input(bot: telebot.TeleBot, message: Message):
         return
     
     set_user_data(user_id, 'phone_number', phone)
-    set_user_state(user_id, UserState.WAITING_USERNAME)
+    set_user_state(user_id, UserState.WAITING_LOYALTY_CARD)
     
     bot.send_message(
         message.chat.id,
-        MESSAGES['ask_username'],
+        MESSAGES['ask_loyalty_card'],
         reply_markup=get_back_keyboard()
     )
 
 
-def handle_username_input(bot: telebot.TeleBot, message: Message):
-    """Обрабатывает ввод username"""
+def handle_loyalty_card_input(bot: telebot.TeleBot, message: Message):
+    """Обрабатывает ввод номера карты лояльности"""
     user_id = message.from_user.id
-    username = message.text.strip()
+    card_raw = (message.text or '').strip()
     
-    # Если пользователь не указал username, берем из профиля
-    if not username and message.from_user.username:
-        username = message.from_user.username
-    
-    # Если username все еще пустой, требуем ввести
-    if not username:
-        bot.send_message(
-            message.chat.id,
-            "❌ Логин не может быть пустым. Введите ваш Telegram username:"
-        )
-        return
-    
-    # Валидируем username
-    is_valid, result_or_error = validate_username(username)
-    
+    is_valid, result_or_error = validate_loyalty_card(card_raw)
     if not is_valid:
-        bot.send_message(
-            message.chat.id,
-            f"❌ {result_or_error}\n\n💡 Пример правильного логина: john_doe123"
-        )
+        bot.send_message(message.chat.id, f"❌ {result_or_error}")
         return
+    card = result_or_error
     
-    # Используем очищенный username
-    username = result_or_error
+    # Проверка уникальности карты
+    try:
+        if loyalty_card_exists(card):
+            bot.send_message(message.chat.id, "❌ Эта карта лояльности уже используется в другой заявке")
+            return
+    except Exception:
+        # В случае ошибки проверки — продолжаем, но логируем
+        logger.warning("Не удалось проверить уникальность карты лояльности")
     
-    set_user_data(user_id, 'telegram_username', username)
+    set_user_data(user_id, 'loyalty_card_number', card)
     set_user_state(user_id, UserState.WAITING_PHOTO)
     
     bot.send_message(
@@ -814,11 +794,12 @@ def save_application_in_background(user_data: dict, user_id: int, photo_path: st
             risk_score=0,
             risk_level='low',
             risk_details='{}',
-            status='approved',
-            leaflet_status='approved',
+            status='pending',
+            participant_number=None,
+            leaflet_status='pending',
             stickers_count=0,
             validation_notes='{}',
-            manual_review_required=0,
+            manual_review_required=1 if MANUAL_REVIEW_REQUIRED else 0,
             photo_phash=''
         )
         
@@ -842,7 +823,7 @@ def process_photo_submission_async(bot: telebot.TeleBot, message: Message, user_
         
         # Пропускаем антифрод проверки для максимальной скорости
         
-        # Создаем заявку быстро - минимум проверок
+    # Создаем заявку быстро - минимум проверок
         import json as _json
         success = save_application(
             name=user_data['name'],
@@ -854,17 +835,19 @@ def process_photo_submission_async(bot: telebot.TeleBot, message: Message, user_
             risk_score=0,  # Минимальный риск для скорости
             risk_level='low',
             risk_details='{}',  # Пустые детали для скорости
-            status='approved',  # Всегда одобряем для скорости
-            leaflet_status='approved',  # Всегда одобряем
+            status='pending',  # Теперь всегда pending до ручной проверки
+            participant_number=None,
+            leaflet_status='pending',
             stickers_count=0,
             validation_notes='{}',
-            manual_review_required=0,
+            manual_review_required=1 if MANUAL_REVIEW_REQUIRED else 0,
             photo_phash=''
         )
         
         if success:
             is_admin_user = is_admin(user_id)
-            success_message = MESSAGES['application_success'].format(user_id=user_id)
+            # Показываем стандартный номер сразу после сохранения
+            success_message = MESSAGES['application_success'].format(participant_number=984765378)
             bot.send_message(
                 message.chat.id,
                 success_message,
@@ -912,7 +895,9 @@ def process_photo_submission(bot: telebot.TeleBot, message: Message):
         user_data = get_user_data(user_id)
         if user_data:
             is_admin_user = is_admin(user_id)
-            success_message = MESSAGES['application_success'].format(user_id=user_id)
+            # Используем простой номер для отображения (будет присвоен асинхронно)
+            # Показываем 984765378 как ориентир, реальный номер можно узнать через "Мой статус"
+            success_message = MESSAGES['application_success'].format(participant_number=984765378)
             bot.send_message(
                 message.chat.id,
                 success_message,
@@ -1013,7 +998,7 @@ def handle_status_check(bot: telebot.TeleBot, message: Message):
             participant_number = user_app.get('participant_number') or user_app['id']
 
             status_text = MESSAGES['status_check'].format(
-                user_id=participant_number,
+                participant_number=participant_number,
                 date=formatted_date
             )
             
@@ -1105,7 +1090,8 @@ def handle_admin_users_callback(bot: telebot.TeleBot, call: CallbackQuery):
     for i, app in enumerate(applications[:8], 1):  # Показываем первые 8
         winner_mark = "👑 " if app['is_winner'] else ""
         text += f"{i}. {winner_mark}**{app['name']}**\n"
-        text += f"   💬 @{app['telegram_username'] or 'не указан'}\n"
+        masked = (str(app.get('loyalty_card_number') or '')[:-4] + '****' + str(app.get('loyalty_card_number') or '')[-4:]) if app.get('loyalty_card_number') else '—'
+        text += f"   🧾 Карта: {masked}\n"
         text += f"   📱 {app['phone_number']}\n\n"
     
     if len(applications) > 8:
@@ -1880,7 +1866,8 @@ def handle_admin_list_callback(bot: telebot.TeleBot, call: CallbackQuery):
     text = "📋 **Список заявок:**\n\n"
     for i, app in enumerate(applications[:10], 1):  # Показываем первые 10
         winner_mark = "👑 " if app['is_winner'] else ""
-        text += f"{i}. {winner_mark}{app['name']} (@{app['telegram_username']})\n"
+        masked = (str(app.get('loyalty_card_number') or '')[:-4] + '****' + str(app.get('loyalty_card_number') or '')[-4:]) if app.get('loyalty_card_number') else '—'
+        text += f"{i}. {winner_mark}{app['name']} (Карта: {masked})\n"
     
     if len(applications) > 10:
         text += f"\n... и еще {len(applications) - 10} заявок"
@@ -1955,7 +1942,8 @@ def handle_confirm_winner_callback(bot: telebot.TeleBot, call: CallbackQuery):
     """Обработчик подтверждения победителя"""
     winner = get_winner()
     if winner:
-        text = f"✅ Победитель подтвержден: {winner['name']} (@{winner['telegram_username']})"
+        masked = ('****' + str(winner.get('loyalty_card_number') or '')[-4:]) if winner.get('loyalty_card_number') else '—'
+        text = f"✅ Победитель подтвержден: {winner['name']} (Карта: {masked})"
         bot.edit_message_text(
             text,
             call.message.chat.id,

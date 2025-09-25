@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+
+{% block title %}Назначение типа акции{% endblock %}
+
+{% block content %}
+<div class="p-6 space-y-6">
+  <h1 class="text-2xl font-bold text-slate-900">Назначение типа акции</h1>
+  <div class="bg-white rounded-xl border border-slate-200 overflow-hidden">
+    <div class="p-4 border-b flex items-center gap-3">
+      {% if user.photo_path %}
+      <img src="/photo/{{ user.photo_path | basename }}" class="h-12 w-12 rounded-full object-cover">
+      {% endif %}
+      <div>
+        <div class="font-semibold text-slate-800">{{ user.name }}</div>
+        <div class="text-xs text-slate-500">ID {{ user.id }} • {{ user.timestamp | format_datetime }}</div>
+      </div>
+    </div>
+    <form class="p-6 space-y-4" method="post" action="/applications/assign-campaign">
+      <input type="hidden" name="id" value="{{ user.id }}">
+      <div>
+        <label class="block text-sm font-medium text-slate-700">Тип акции</label>
+        <select name="campaign_type" class="mt-1 px-3 py-2 border rounded-md w-full">
+          <option value="pending" {% if (user.campaign_type or 'pending')=='pending' %}selected{% endif %}>Не назначено</option>
+          <option value="smile_500" {% if user.campaign_type=='smile_500' %}selected{% endif %}>Оплата улыбкой</option>
+          <option value="sub_1500" {% if user.campaign_type=='sub_1500' %}selected{% endif %}>Субакция</option>
+        </select>
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-slate-700">Статус модерации</label>
+        <select name="manual_review_status" class="mt-1 px-3 py-2 border rounded-md w-full">
+          <option value="pending" {% if (user.manual_review_status or 'pending')=='pending' %}selected{% endif %}>В ожидании</option>
+          <option value="approved" {% if user.manual_review_status=='approved' %}selected{% endif %}>Одобрено</option>
+          <option value="rejected" {% if user.manual_review_status=='rejected' %}selected{% endif %}>Отклонено</option>
+          <option value="needs_clarification" {% if user.manual_review_status=='needs_clarification' %}selected{% endif %}>Нужны уточнения</option>
+        </select>
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-slate-700">Комментарий администратора</label>
+        <textarea name="admin_notes" class="mt-1 px-3 py-2 border rounded-md w-full" rows="4" placeholder="Комментарий...">{{ user.admin_notes or '' }}</textarea>
+      </div>
+      <div class="pt-2 flex items-center gap-3">
+        <a href="/applications/manual-review" class="inline-flex items-center justify-center rounded-md border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 px-4 py-2 font-semibold">Отмена</a>
+        <button class="inline-flex items-center justify-center rounded-md bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 font-semibold"><i class="fas fa-save mr-2"></i>Сохранить</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

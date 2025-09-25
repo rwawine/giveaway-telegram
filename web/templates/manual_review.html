@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+
+{% block title %}Ручная модерация{% endblock %}
+
+{% block content %}
+<div class="p-6 space-y-6">
+  <div class="flex items-center justify-between">
+    <div>
+      <h1 class="text-2xl font-bold text-slate-900">Ручная модерация</h1>
+      <p class="text-sm text-slate-500">Проверьте заявки и назначьте тип акции.</p>
+    </div>
+    <div class="flex items-center gap-2">
+      <a href="/applications/manual-review" class="px-3 py-2 rounded-md border border-slate-300 bg-white hover:bg-slate-50 text-slate-700">Сбросить фильтры</a>
+    </div>
+  </div>
+
+  <form class="flex items-center gap-3" method="get" action="/applications/manual-review">
+    <label class="text-sm text-slate-600">Акция:</label>
+    <select name="campaign" class="px-3 py-2 border rounded-md">
+      <option value="" {% if not filter_campaign %}selected{% endif %}>Любая</option>
+      <option value="smile_500" {% if filter_campaign=='smile_500' %}selected{% endif %}>Оплата улыбкой</option>
+      <option value="sub_1500" {% if filter_campaign=='sub_1500' %}selected{% endif %}>Субакция</option>
+      <option value="pending" {% if filter_campaign=='pending' %}selected{% endif %}>Не назначено</option>
+    </select>
+    <button class="px-4 py-2 rounded-md bg-indigo-600 text-white hover:bg-indigo-700">Применить</button>
+  </form>
+
+  {% if applications %}
+  <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+    {% for app in applications %}
+    <div class="bg-white border border-slate-200 rounded-xl overflow-hidden">
+      <div class="p-4 flex items-center gap-3 border-b">
+        {% if app.photo_path %}
+        <img src="/photo/{{ app.photo_path | basename }}" class="h-12 w-12 rounded-full object-cover cursor-pointer" onclick="openCompare('{{ app.photo_path | basename }}')">
+        {% else %}
+        <div class="h-12 w-12 rounded-full bg-slate-100 flex items-center justify-center"><i class="fas fa-user text-slate-400"></i></div>
+        {% endif %}
+        <div>
+          <div class="font-semibold text-slate-800">{{ app.name }}</div>
+          <div class="text-xs text-slate-500">ID {{ app.id }} • {{ app.timestamp | format_datetime }}</div>
+        </div>
+      </div>
+      <div class="p-4 text-sm text-slate-700 space-y-1">
+        <div><i class="fas fa-phone w-4 text-slate-400"></i> {{ app.phone_number }}</div>
+        <div><i class="fas fa-id-card w-4 text-slate-400"></i> Карта: {% if app.loyalty_card_number %}****{{ app.loyalty_card_number[-4:] }}{% else %}—{% endif %}</div>
+        <div><i class="fas fa-tag w-4 text-slate-400"></i> Акция: {{ app.campaign_type or 'pending' }}</div>
+        <div><i class="fas fa-clipboard-check w-4 text-slate-400"></i> Модерация: {{ app.manual_review_status or 'pending' }}</div>
+      </div>
+      <div class="p-4 bg-slate-50 border-t flex items-center justify-between gap-2">
+        <a href="/applications/assign-campaign?id={{ app.id }}" class="inline-flex items-center justify-center rounded-md bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-2 font-semibold"><i class="fas fa-tasks mr-2"></i>Назначить</a>
+        <button type="button" class="inline-flex items-center justify-center rounded-md border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 px-3 py-2 font-semibold" onclick="openCompare('{{ app.photo_path | basename }}')"><i class="fas fa-columns mr-2"></i>Сравнить фото</button>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="text-center text-slate-500 py-12">Нет заявок для модерации</div>
+  {% endif %}
+</div>
+
+<!-- Модал сравнения фото -->
+<div id="compareModal" class="fixed inset-0 z-50 hidden items-center justify-center p-4">
+  <div class="absolute inset-0 bg-black/50" onclick="closeCompare()"></div>
+  <div class="relative bg-white rounded-xl shadow-xl w-full max-w-5xl overflow-hidden">
+    <div class="p-3 border-b flex items-center justify-between">
+      <h3 class="font-semibold text-slate-800"><i class="fas fa-columns mr-2"></i>Сравнение фото (side-by-side)</h3>
+      <button class="text-2xl font-light text-slate-400 hover:text-slate-600 leading-none" onclick="closeCompare()">&times;</button>
+    </div>
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-0">
+      <img id="cmpLeft" src="" class="w-full h-auto object-contain">
+      <img id="cmpRight" src="" class="w-full h-auto object-contain">
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function openCompare(filename) {
+  const modal = document.getElementById('compareModal');
+  document.getElementById('cmpLeft').src = '/photo/' + filename;
+  document.getElementById('cmpRight').src = '/photo/' + filename;
+  modal.classList.remove('hidden');
+  modal.classList.add('flex');
+}
+function closeCompare() {
+  const modal = document.getElementById('compareModal');
+  modal.classList.add('hidden');
+  modal.classList.remove('flex');
+}
+</script>
+{% endblock %}

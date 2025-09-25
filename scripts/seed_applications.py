@@ -11,6 +11,7 @@ if PARENT_DIR not in sys.path:
     sys.path.insert(0, PARENT_DIR)
 
 from database.db_manager import init_database, save_application, get_applications_count
+from config import LOYALTY_CARD_LENGTH
 
 
 FIRST_NAMES = [
@@ -29,9 +30,13 @@ def random_name(rng: random.Random) -> str:
     return f"{rng.choice(FIRST_NAMES)} {rng.choice(LAST_NAMES)}"
 
 
-def random_username(rng: random.Random, idx: int) -> str:
-    base = rng.choice(["user", "member", "player", "guest", "client", "human"])  # simple base
-    return f"{base}_{idx}"
+def random_loyalty_card(rng: random.Random, idx: int) -> str:
+    # Generate deterministic numeric card of required length
+    base = f"{idx:0{LOYALTY_CARD_LENGTH}d}"[-LOYALTY_CARD_LENGTH:]
+    # Ensure not sequential trivial
+    if len(set(base)) == 1:
+        base = (str((idx + 13579) % (10 ** LOYALTY_CARD_LENGTH))).zfill(LOYALTY_CARD_LENGTH)
+    return base
 
 
 def random_phone(idx: int) -> str:
@@ -80,17 +85,17 @@ def main():
 
     for i in range(start_idx, start_idx + args.count):
         name = random_name(rng)
-        username = random_username(rng, i)
+loyalty_card = random_loyalty_card(rng, i)
         phone = random_phone(i)
         telegram_id = 100000000 + i
         # Use empty photo path to avoid 404 on gallery; column is NOT NULL but empty string is fine
         photo_path = ""
         status, risk_score, risk_level = choose_status_and_risk(rng)
         # lightweight risk details string; leave empty for speed
-        ok = save_application(
+ok = save_application(
             name=name,
             phone_number=phone,
-            telegram_username=username,
+            loyalty_card_number=loyalty_card,
             telegram_id=telegram_id,
             photo_path=photo_path,
             photo_hash=str(telegram_id),
@@ -98,6 +103,14 @@ def main():
             risk_level=risk_level,
             risk_details="",
             status=status,
+            campaign_type='pending',
+            admin_notes='',
+            manual_review_status='pending',
+            leaflet_status='pending',
+            stickers_count=0,
+            validation_notes='',
+            manual_review_required=1,
+            photo_phash='' 
         )
         if ok:
             inserted += 1

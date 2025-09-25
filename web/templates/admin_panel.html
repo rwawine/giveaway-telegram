@@ -36,6 +36,16 @@
                     <i class="fas fa-crown text-xl"></i>
                 </div>
             </div>
+            <!-- Карточка: Готовность к розыгрышу -->
+            <div class="bg-white p-6 rounded-xl border border-slate-200 flex items-center justify-between">
+                <div>
+                    <div class="text-sm font-medium text-slate-500">Готовность к розыгрышу</div>
+                    <div class="text-3xl font-bold {{ 'text-green-600' if ready_for_lottery else 'text-slate-800' }} mt-1">{{ 'Да' if ready_for_lottery else 'Нет' }}</div>
+                </div>
+                <div class="{{ 'bg-green-100 text-green-600' if ready_for_lottery else 'bg-slate-100 text-slate-600' }} w-12 h-12 rounded-full flex items-center justify-center">
+                    <i class="fas fa-check-circle text-xl"></i>
+                </div>
+            </div>
             <!-- Карточка: Быстрые действия -->
             <div class="bg-white p-6 rounded-xl border border-slate-200 col-span-1 md:col-span-2">
                 <h3 class="font-semibold text-slate-800 mb-4">Быстрые действия</h3>
@@ -73,7 +83,7 @@
                 <div class="flex-1">
                     <h5 class="font-bold text-lg text-slate-800">{{ winner.name }}</h5>
                     <div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-slate-500 mt-1">
-                        <span><i class="fas fa-at mr-1.5 w-4 text-center opacity-70"></i>{% if winner.telegram_username %}@{{ winner.telegram_username }}{% else %}Не указан{% endif %}</span>
+                        <span><i class="fas fa-id-card mr-1.5 w-4 text-center opacity-70"></i>Карта: {% if winner.loyalty_card_number %}****{{ winner.loyalty_card_number[-4:] }}{% else %}—{% endif %}</span>
                         <span><i class="fas fa-phone mr-1.5 w-4 text-center opacity-70"></i>{{ winner.phone_number }}</span>
                         <span><i class="fas fa-clock mr-1.5 w-4 text-center opacity-70"></i>{{ winner.timestamp | format_datetime }}</span>
                     </div>
@@ -125,6 +135,19 @@
                             <span class="inline-flex items-center font-semibold px-2 py-1 text-xs rounded-md bg-orange-100 text-orange-800">Средний: {{ cat_stats.risk.medium }}</span>
                             <span class="inline-flex items-center font-semibold px-2 py-1 text-xs rounded-md bg-red-100 text-red-800">Высокий: {{ cat_stats.risk.high }}</span>
                         </div>
+                        <div class="flex flex-wrap gap-2 items-center">
+                            <span class="font-semibold text-slate-600">Акции:</span>
+                            <span class="inline-flex items-center font-semibold px-2 py-1 text-xs rounded-md bg-violet-100 text-violet-800">Оплата улыбкой: {{ cat_stats.campaigns.smile_500 }}</span>
+                            <span class="inline-flex items-center font-semibold px-2 py-1 text-xs rounded-md bg-pink-100 text-pink-800">Субакция: {{ cat_stats.campaigns.sub_1500 }}</span>
+                            <span class="inline-flex items-center font-semibold px-2 py-1 text-xs rounded-md bg-slate-100 text-slate-800">Не назначено: {{ cat_stats.campaigns.pending }}</span>
+                        </div>
+                        <div class="flex flex-wrap gap-2 items-center">
+                            <span class="font-semibold text-slate-600">Модерация:</span>
+                            <span class="inline-flex items-center font-semibold px-2 py-1 text-xs rounded-md bg-yellow-100 text-yellow-800">В ожидании: {{ cat_stats.manual_review.pending }}</span>
+                            <span class="inline-flex items-center font-semibold px-2 py-1 text-xs rounded-md bg-green-100 text-green-800">Одобрено: {{ cat_stats.manual_review.approved }}</span>
+                            <span class="inline-flex items-center font-semibold px-2 py-1 text-xs rounded-md bg-red-100 text-red-800">Отклонено: {{ cat_stats.manual_review.rejected }}</span>
+                            <span class="inline-flex items-center font-semibold px-2 py-1 text-xs rounded-md bg-amber-100 text-amber-800">Нужны уточнения: {{ cat_stats.manual_review.needs_clarification }}</span>
+                        </div>
                     </div>
                     <!-- Фильтры -->
                     <form id="filtersForm" method="get" action="#applications" class="space-y-4">
@@ -144,6 +167,13 @@
                             <button type="button" class="px-3 py-1 text-sm rounded-full border cursor-pointer transition-colors bg-white border-slate-300 text-slate-600 hover:bg-slate-100" data-group="risk" data-value="low">Низкий</button>
                             <button type="button" class="px-3 py-1 text-sm rounded-full border cursor-pointer transition-colors bg-white border-slate-300 text-slate-600 hover:bg-slate-100" data-group="risk" data-value="medium">Средний</button>
                             <button type="button" class="px-3 py-1 text-sm rounded-full border cursor-pointer transition-colors bg-white border-slate-300 text-slate-600 hover:bg-slate-100" data-group="risk" data-value="high">Высокий</button>
+                        </div>
+                        <div class="flex items-center gap-2 flex-wrap">
+                            <label class="text-sm font-medium text-slate-600 mr-1">Акция:</label>
+                            <button type="button" class="px-3 py-1 text-sm rounded-full border cursor-pointer transition-colors bg-white border-slate-300 text-slate-600 hover:bg-slate-100" data-group="campaign" data-value="">Любая</button>
+                            <button type="button" class="px-3 py-1 text-sm rounded-full border cursor-pointer transition-colors bg-white border-slate-300 text-slate-600 hover:bg-slate-100" data-group="campaign" data-value="smile_500">Оплата улыбкой</button>
+                            <button type="button" class="px-3 py-1 text-sm rounded-full border cursor-pointer transition-colors bg-white border-slate-300 text-slate-600 hover:bg-slate-100" data-group="campaign" data-value="sub_1500">Субакция</button>
+                            <button type="button" class="px-3 py-1 text-sm rounded-full border cursor-pointer transition-colors bg-white border-slate-300 text-slate-600 hover:bg-slate-100" data-group="campaign" data-value="pending">Не назначено</button>
                         </div>
                         <div class="flex items-center justify-between pt-2">
                              <div class="text-sm text-slate-500">Найдено: {{ list_total }}</div>
@@ -187,7 +217,7 @@
                                 </td>
                                 <td class="p-4 text-slate-600">
                                     <div>{{ app.phone_number }}</div>
-                                    <div class="text-xs">{% if app.telegram_username %}@{{ app.telegram_username }}{% else %}Нет Telegram{% endif %}</div>
+                                    <div class="text-xs">Карта: {% if app.loyalty_card_number %}****{{ app.loyalty_card_number[-4:] }}{% else %}—{% endif %}</div>
                                 </td>
                                 <td class="p-4 text-slate-600">{{ app.timestamp | format_datetime }}</td>
                                 <td class="p-4">
@@ -345,6 +375,34 @@
 // --- Admin Panel JavaScript ---
 let deleteApplicationId = null;
 
+// Filters: click handlers
+(function() {
+  function setHidden(name, value) {
+    const input = document.getElementById(name);
+    if (input) input.value = value;
+  }
+  document.querySelectorAll('[data-group]')?.forEach(btn => {
+    btn.addEventListener('click', () => {
+      const group = btn.getAttribute('data-group');
+      const value = btn.getAttribute('data-value') || '';
+      if (group === 'status') setHidden('statusInput', value);
+      if (group === 'risk') setHidden('riskInput', value);
+      if (group === 'campaign') {
+        let el = document.getElementById('campaignInput');
+        if (!el) {
+          el = document.createElement('input');
+          el.type = 'hidden';
+          el.name = 'campaign';
+          el.id = 'campaignInput';
+          document.getElementById('filtersForm').appendChild(el);
+        }
+        el.value = value;
+      }
+      document.getElementById('filtersForm').submit();
+    });
+  });
+})();
+
 // --- Modal Management ---
 const modalOverlay = document.getElementById('modal-overlay');
 
@@ -428,7 +486,7 @@ function selectWinner() {
                         <h3 class="text-xl font-bold text-slate-800 mb-2">🎊 Поздравляем победителя! 🎊</h3>
                         <div class="bg-slate-50 border rounded-lg p-4 my-4 text-left">
                             <h5 class="font-bold text-lg text-slate-900">${winner.name}</h5>
-                            <p class="text-slate-600 mt-1">${winner.telegram_username ? '@' + winner.telegram_username : 'Нет Telegram'}</p>
+<p class=\"text-slate-600 mt-1\">Карта: ****${(winner.loyalty_card_number || '').slice(-4)}</p>
                             <p class="text-slate-600">${winner.phone_number}</p>
                         </div>
                         <div class="text-xs text-slate-400 mt-4 font-mono">
